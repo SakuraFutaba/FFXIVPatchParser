@@ -1,0 +1,41 @@
+{
+  "version": 1,
+  "dependencies": {
+    "net10.0-windows7.0": {
+      "BCnEncoder.Net": {
+        "type": "Transitive",
+        "resolved": "2.2.1",
+        "contentHash": "tI5+/OQo0kciLqWrViRjpOH+IL3FjexYnoWZajiGV41g/EM9CGbWsxsPzBDmpoxNkrV9uox/EtIhCIi9chBSFw==",
+        "dependencies": {
+          "CommunityToolkit.HighPerformance": "8.4.0"
+        }
+      },
+      "CommunityToolkit.HighPerformance": {
+        "type": "Transitive",
+        "resolved": "8.4.0",
+        "contentHash": "flxspiBs0G/0GMp7IK2J2ijV9bTG6hEwFc/z6ekHqB6nwRJ4Ry2yLdx+TkbCUYFCl4XhABkAwomeKbT6zM2Zlg=="
+      },
+      "Lumina": {
+        "type": "Transitive",
+        "resolved": "7.7.2",
+        "contentHash": "tIjvhV2yyk8kHJa4Wxd0AH+y7P1tgmzvOU9uOUwdy/dUcBocWzEAWJlUnuHXOFnsEBaAE3iA+vHWYfkqVcc7TA==",
+        "dependencies": {
+          "BCnEncoder.Net": "2.2.1",
+          "Microsoft.Extensions.ObjectPool": "10.0.0"
+        }
+      },
+      "Microsoft.Extensions.ObjectPool": {
+        "type": "Transitive",
+        "resolved": "10.0.0",
+        "contentHash": "bpeCq0IYmVLACyEUMzFIOQX+zZUElG1t+nu1lSxthe7B+1oNYking7b91305+jNB6iwojp9fqTY9O+Nh7ULQxg=="
+      },
+      "ffxivpatchparser": {
+        "type": "Project",
+        "dependencies": {
+          "Lumina": "[7.7.2, )"
+        }
+      }
+    },
+    "net10.0-windows7.0/win-x64": {}
+  }
+}

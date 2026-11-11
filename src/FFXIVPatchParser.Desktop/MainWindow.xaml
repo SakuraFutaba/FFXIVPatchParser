@@ -1,0 +1,103 @@
+<Window x:Class="FFXIVPatchParser.Desktop.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:FFXIVPatchParser.Desktop"
+ Title="FFXIV Patch Parser" Width="1480" Height="920" MinWidth="1180" MinHeight="760" WindowStartupLocation="CenterScreen" Background="#F7F8FA">
+<Grid>
+  <Grid.ColumnDefinitions><ColumnDefinition Width="160"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+  <Border Background="#101C2E">
+    <DockPanel>
+      <StackPanel DockPanel.Dock="Top" Margin="18,16,12,16"><TextBlock Text="XIV" Foreground="#87B5FF" FontSize="22" FontWeight="Bold"/><TextBlock Text="PATCH PARSER" Foreground="White" FontSize="12" FontWeight="SemiBold" Margin="0,4,0,0"/><TextBlock Text="补丁与数据差异工作台" Foreground="#8193AD" FontSize="11" Margin="0,12,0,0"/></StackPanel>
+      <StackPanel DockPanel.Dock="Bottom" Margin="18,0,12,16"><TextBlock Text="●  本地工作空间" Foreground="#79D6AE" FontSize="12"/><TextBlock Text="CHS · Raw Excel" Foreground="#8193AD" FontSize="11" Margin="0,9,0,0"/></StackPanel>
+      <StackPanel>
+        <RadioButton x:Name="ResourceNav" GroupName="Nav" Style="{StaticResource Nav}" Content="01    变化资源" IsChecked="True" Checked="Navigate"/>
+        <RadioButton x:Name="DiffNav" GroupName="Nav" Style="{StaticResource Nav}" Content="02    表格 Diff" Checked="Navigate"/>
+        <RadioButton x:Name="CatalogNav" GroupName="Nav" Style="{StaticResource Nav}" Content="03    补丁目录" Checked="Navigate"/>
+        <Border Background="#243146" Height="1" Margin="18,14"/>
+        <TextBlock Text="ZIP 补丁 · Raw 快照&#x0a;历史 CHS 数据" Foreground="#8193AD" FontSize="11" Margin="18,0" LineHeight="23"/>
+      </StackPanel>
+    </DockPanel>
+  </Border>
+  <Grid Grid.Column="1" Margin="16,12,16,8">
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <DockPanel Margin="0,0,0,10">
+      <StackPanel><TextBlock x:Name="PageTitle" Text="变化资源" FontSize="19" FontWeight="SemiBold"/><TextBlock x:Name="PageSubtitle" Visibility="Collapsed" Text="打开补丁，检查它改变了哪些文件。" Foreground="{StaticResource Muted}" Margin="0,8,0,0"/></StackPanel>
+      <Border HorizontalAlignment="Right" VerticalAlignment="Top" Background="#EAF1FF" CornerRadius="12" Padding="12,5"><TextBlock Text="READ ONLY · 游戏文件只读" Foreground="#3869AE" FontSize="11"/></Border>
+    </DockPanel>
+    <Grid Grid.Row="1" x:Name="ResourceView">
+      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+      <Border Background="White" BorderBrush="#E4E7EC" BorderThickness="1" CornerRadius="9" Padding="12" Margin="0,0,0,10">
+        <DockPanel><StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center"><Button x:Name="OpenPatchButton" Content="选择补丁 ZIP…" Style="{StaticResource Primary}" Click="OpenPatch"/><Button Content="查看表格 Diff →" Click="ShowDiff"/></StackPanel>
+        <StackPanel><TextBlock Text="当前补丁" FontSize="11" Foreground="{StaticResource Muted}"/><TextBlock x:Name="PatchTitle" Text="尚未选择补丁" FontSize="18" FontWeight="SemiBold" Margin="0,8,16,0" TextTrimming="CharacterEllipsis"/><TextBlock x:Name="PatchInfo" Text="支持选择同一更新的多个 ZIP 分卷。" Foreground="{StaticResource Muted}" Margin="0,8,0,0"/></StackPanel></DockPanel>
+      </Border>
+      <TextBlock Grid.Row="1" Text="变化文件 · SqPack 容器级清单" FontWeight="SemiBold" FontSize="15" Margin="0,0,0,12"/>
+      <DockPanel Grid.Row="2" Margin="0,0,0,12"><ComboBox x:Name="CategoryFilter" Width="150" DockPanel.Dock="Right" SelectionChanged="FilterResources"/><TextBox x:Name="ResourceSearch" Tag="搜索资源路径或类别…" MaxWidth="550" HorizontalAlignment="Left" Width="470" ToolTip="搜索资源路径或类别" TextChanged="FilterResources" Margin="0,0,12,0"/></DockPanel>
+      <DataGrid Grid.Row="3" x:Name="ResourcesGrid" SelectionChanged="ResourceSelected">
+        <DataGrid.Columns><DataGridTextColumn Header="资源路径" Binding="{Binding Path}" Width="*"/><DataGridTextColumn Header="类别" Binding="{Binding Category}" Width="115"/><DataGridTextColumn Header="资料片" Binding="{Binding Repository}" Width="85"/><DataGridTextColumn Header="差分大小" Binding="{Binding SizeLabel}" Width="125"/><DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="100"/></DataGrid.Columns>
+      </DataGrid>
+      <Border Grid.Row="4" Background="#EDF1F6" Padding="8" Margin="0,8,0,0" CornerRadius="6"><TextBlock x:Name="ResourceDetail" Text="选择文件查看 ZIP 内路径与前后校验值。容器内的具体模型、贴图需要匹配基线还原后才能继续比较。" TextWrapping="Wrap" Foreground="#536176" FontSize="11"/></Border>
+    </Grid>
+    <Grid Grid.Row="1" x:Name="DiffView" Visibility="Collapsed">
+      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+      <DockPanel Margin="0,0,0,8">
+        <StackPanel Orientation="Horizontal" DockPanel.Dock="Right">
+          <Button x:Name="ClearFiltersButton" Content="清除筛选" Click="ClearFilters" Visibility="Collapsed" Padding="8,3"/>
+          <TextBlock Text="− 旧值" Foreground="#CF222E" VerticalAlignment="Center" Margin="8,0"/>
+          <TextBlock Text="+ 新值" Foreground="#116329" VerticalAlignment="Center"/>
+          <CheckBox x:Name="ChangedColumnsOnly" Content="只看变化列" IsChecked="True" VerticalAlignment="Center" Margin="14,0" Click="ColumnsChanged"/>
+          <Button x:Name="SourceSettingsButton" Content="数据源 / 设置" Padding="10,4" Margin="0" Click="OpenSourceSettings" ToolTip="{Binding Text, ElementName=SourceLabel}"/>
+        </StackPanel>
+        <TextBlock x:Name="DiffSummary" Text="加载补丁后自动匹配 CHS 历史版本" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+      </DockPanel>
+      <Grid Grid.Row="1">
+        <Grid.ColumnDefinitions><ColumnDefinition Width="180"/><ColumnDefinition Width="8"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+        <DockPanel>
+          <TextBox x:Name="SheetSearch" Tag="搜索变化的表…" DockPanel.Dock="Top" Margin="0,0,0,6" ToolTip="搜索变化表" TextChanged="FilterSheets"/>
+          <ListBox x:Name="SheetsList" BorderBrush="#E4E7EC" SelectionChanged="SheetSelected" ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+            <ListBox.ItemTemplate><DataTemplate><StackPanel Margin="4,4" ToolTip="{Binding State}"><TextBlock Text="{Binding Name}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Name}"/></StackPanel></DataTemplate></ListBox.ItemTemplate>
+          </ListBox>
+        </DockPanel>
+        <Grid Grid.Column="2">
+          <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+          <DataGrid x:Name="DiffGrid" CanUserSortColumns="False" CanUserReorderColumns="False" RowHeight="32" SelectionUnit="Cell" SelectedCellsChanged="CellSelected" FrozenColumnCount="1"/>
+          <DockPanel Grid.Row="1" Margin="0,6,0,0">
+            <StackPanel Orientation="Horizontal" DockPanel.Dock="Right"><Button Content="‹ 列" Click="PreviousColumns" Padding="10,5"/><TextBlock x:Name="ColumnPageLabel" VerticalAlignment="Center" Margin="0,0,8,0"/><Button Content="列 ›" Click="NextColumns" Padding="10,5" Margin="0"/></StackPanel>
+            <StackPanel Orientation="Horizontal"><Button Content="‹ 行" Click="PreviousRows" Padding="10,5"/><TextBlock x:Name="RowPageLabel" VerticalAlignment="Center" Margin="0,0,8,0"/><Button Content="行 ›" Click="NextRows" Padding="10,5"/></StackPanel>
+          </DockPanel>
+          <Grid Grid.Row="2" Margin="0,6,0,0">
+            <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="8"/><ColumnDefinition/></Grid.ColumnDefinitions>
+            <local:DiffValueView x:Name="OldCell" IsReadOnly="True" Height="80" Padding="8,5" VerticalScrollBarVisibility="Auto" Background="#FFEBE9" BorderBrush="#FFCECB" Foreground="#82071E" ToolTip="完整旧值；字符串支持字符高亮，可选择并复制"/>
+            <local:DiffValueView Grid.Column="2" x:Name="NewCell" IsReadOnly="True" Height="80" Padding="8,5" VerticalScrollBarVisibility="Auto" Background="#DAFBE1" BorderBrush="#ACEBBE" Foreground="#116329" ToolTip="完整新值；字符串支持字符高亮，可选择并复制"/>
+          </Grid>
+        </Grid>
+      </Grid>
+      <Popup x:Name="SourceSettings" PlacementTarget="{Binding ElementName=SourceSettingsButton}" Placement="Bottom" StaysOpen="False" AllowsTransparency="True">
+        <Border Background="White" BorderBrush="#D0D7DE" BorderThickness="1" CornerRadius="6" Padding="16" Width="580">
+          <StackPanel>
+            <TextBlock Text="数据源设置" FontSize="16" FontWeight="SemiBold" Margin="0,0,0,10"/>
+            <TextBlock Text="加载补丁后自动匹配准确的 CHS 构建版本。" Foreground="#667085" Margin="0,0,0,10"/>
+            <WrapPanel><Button x:Name="RemoteButton" Content="重新匹配 CHS" Click="LoadRemote"/><Button x:Name="OldButton" Content="选择旧 Raw 快照…" Click="SelectOld"/><Button x:Name="NewButton" Content="选择新 Raw 快照…" Click="SelectNew"/></WrapPanel>
+            <TextBlock x:Name="SourceLabel" Text="尚未加载补丁" TextWrapping="Wrap" FontWeight="SemiBold" Margin="0,12,0,0"/>
+            <TextBlock x:Name="SourceNote" Text="也可以手动选择两份本地 Raw 快照。" TextWrapping="Wrap" Foreground="#667085" Margin="0,6,0,0"/>
+          </StackPanel>
+        </Border>
+      </Popup>
+      <Popup x:Name="ColumnFilterPopup" Placement="Bottom" StaysOpen="False" AllowsTransparency="True">
+        <Border Background="White" BorderBrush="#D0D7DE" BorderThickness="1" CornerRadius="6" Padding="12" Width="300">
+          <StackPanel>
+            <TextBlock x:Name="ColumnFilterTitle" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,8"/>
+            <TextBox x:Name="ColumnFilterInput" Tag="输入关键词，Enter 应用" KeyDown="ColumnFilterKeyDown"/>
+            <TextBlock Text="匹配旧值或新值；多个列条件同时满足。" Foreground="#667085" FontSize="11" Margin="0,6"/>
+            <StackPanel Orientation="Horizontal"><Button Content="应用" Click="ApplyColumnFilter"/><Button Content="清除此列" Click="ClearColumnFilter"/></StackPanel>
+          </StackPanel>
+        </Border>
+      </Popup>
+    </Grid>
+    <Grid Grid.Row="1" x:Name="CatalogView" Visibility="Collapsed">
+      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+      <Border Background="White" CornerRadius="8" BorderBrush="#E4E7EC" BorderThickness="1" Padding="12" Margin="0,0,0,10"><DockPanel><StackPanel Orientation="Horizontal" DockPanel.Dock="Right"><Button x:Name="RefreshButton" Content="刷新官方目录" Click="RefreshCatalog"/><Button x:Name="DownloadButton" Content="下载所选补丁" Style="{StaticResource Primary}" Click="DownloadPatch"/></StackPanel><StackPanel><TextBlock x:Name="CatalogTitle" Text="官方国服 V3 补丁" FontSize="18" FontWeight="SemiBold"/><TextBlock x:Name="CatalogInfo" Foreground="{StaticResource Muted}" Margin="0,8,0,0"/></StackPanel></DockPanel></Border>
+      <TextBox Grid.Row="1" x:Name="CatalogSearch" Tag="搜索数据版本或游戏版本…" Width="470" HorizontalAlignment="Left" Margin="0,0,0,12" ToolTip="搜索数据版本或游戏构建版本" TextChanged="FilterCatalog"/>
+      <DataGrid Grid.Row="2" x:Name="CatalogGrid" SelectionChanged="CatalogSelected"><DataGrid.Columns><DataGridTextColumn Header="" Binding="{Binding Badge}" Width="60"/><DataGridTextColumn Header="来源版本" Binding="{Binding From}" Width="115"/><DataGridTextColumn Header="目标版本" Binding="{Binding To}" Width="115"/><DataGridTextColumn Header="游戏构建 / 版本" Binding="{Binding VersionView}" Width="*"/><DataGridTextColumn Header="分卷" Binding="{Binding Files.Count}" Width="65"/><DataGridTextColumn Header="总大小" Binding="{Binding SizeLabel}" Width="130"/><DataGridTextColumn Header="可访问性" Binding="{Binding AccessLabel}" Width="115"/></DataGrid.Columns></DataGrid>
+      <TextBlock Grid.Row="3" x:Name="CatalogDetail" Text="选择一条更新查看包文件。下载仅保存到项目 tmp，不执行安装。" TextWrapping="Wrap" Foreground="{StaticResource Muted}" Margin="0,14,0,0"/>
+    </Grid>
+    <DockPanel Grid.Row="2" Margin="0,8,0,0"><Button x:Name="CancelButton" DockPanel.Dock="Right" Content="取消" Padding="12,3" Visibility="Collapsed" Click="Cancel"/><ProgressBar x:Name="Progress" Width="110" Height="4" DockPanel.Dock="Right" Margin="12,0,12,0" Visibility="Collapsed" IsIndeterminate="True"/><TextBlock x:Name="Status" Text="就绪" Foreground="{StaticResource Muted}" FontSize="12" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/></DockPanel>
+  </Grid>
+</Grid>
+</Window>

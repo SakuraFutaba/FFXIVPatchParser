@@ -1,0 +1,67 @@
+# Local data, downloads, snapshots, caches and experiments
+tmp/
+local/
+config.local.json
+.env
+.env.*
+!.env.example
+
+# .NET build, publish, debug and package artifacts
+**/bin/
+**/obj/
+artifacts/
+publish/
+dist/
+*.exe
+*.dll
+*.pdb
+*.nupkg
+*.snupkg
+
+# IDE / per-user settings
+.vs/
+.vscode/
+.idea/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# Test output, diagnostics and interrupted downloads
+TestResults/
+coverage/
+*.trx
+*.coverage
+*.coveragexml
+*.log
+*.dmp
+*.tmp
+*.partial
+
+# Release archives and game patch payloads (not source)
+*.zip
+*.7z
+*.delta
+*.win32.dat*
+*.win32.index*
+*.rows.jsonl.gz
+
+# Local signing credentials
+*.pfx
+*.p12
+*.key
+
+# Python / OS caches
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Docs
+/docs/
+
+# Tests
+/tests/
