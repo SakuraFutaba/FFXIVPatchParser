@@ -1,0 +1,57 @@
+# 国服 V3 补丁
+
+[知识库首页](README.md)
+
+国服 V3 补丁以 ZIP 分发。ZIP 中的 `patch_delta_direct.dat` 将游戏文件路径映射到 VCDIFF 差分。安装器把差分应用到对应旧文件，生成目标 SqPack 容器和索引。EXD、TEX 和模型可从生成的容器中读取。
+
+本文使用 2026-11-12 查询的目录和国服 7.58 样本。样本构建为 `2026.11.03.0000.0000`，补丁数据版本为 `0.0.0.31`。
+
+## 追踪入口与版本身份
+
+最初从启动器「保留补丁包」设置追到国服下载与安装代码。默认保留目录是 `%APPDATA%/XIVLauncherCN/patches/v3/<包名>`。启动器读出更新路径后，逐跳取得包文件清单。 [设置界面](https://github.com/AtmoOmen/FFXIVQuickLauncher/blob/65972f758b47615f321d4f3da509e3ade3b14489/src/XIVLauncher/Windows/SettingsWindow.xaml#L429) · [GameUpdater](https://github.com/AtmoOmen/FFXIVQuickLauncher/blob/65972f758b47615f321d4f3da509e3ade3b14489/src/XIVLauncher.GamePatchV3/Update/GameUpdater.cs) · [GamePatchMetadataClient](https://github.com/AtmoOmen/FFXIVQuickLauncher/blob/65972f758b47615f321d4f3da509e3ade3b14489/src/XIVLauncher.GamePatchV3/GamePatchMetadataClient.cs)
+
+| 标识 | 用途 | 样本 |
+| --- | --- | --- |
+| 数据版本 | 补丁图的节点 | `0.0.0.31` |
+| 游戏构建号 | 精确匹配客户端与历史数据 | `2026.11.03.0000.0000` |
+| 展示版本 | 面向玩家的版本名称 | `7.58` |
+| `versionView` | 关联构建号与展示版本 | `2026.11.03.0000.0000_7.58` |
+
+官方目录 `ver2.dat` 的 `areas` 中，区域 `id == "0"` 的 `must` 决定更新目标。样本中 `min` 为 `0.0.0.19`，`must` 和 `max` 均为 `0.0.0.31`。启动器沿 `from → to` 图做广度优先搜索，以补丁跳数最少为目标。 [官方 ver2.dat](https://v3launcher.jijiagames.com/v3launcher/build/ver2data/100001900/8847/-1/ver2.dat)
+
+```mermaid
+flowchart LR
+  A["ver2.dat 与构建映射"] --> B["每跳 FileList"]
+  B --> C["一个或多个 ZIP"]
+  C --> D["路径与三层文件哈希"]
+  D --> E["匹配旧文件并应用 VCDIFF"]
+  E --> F["目标 SqPack 与索引"]
+  F --> G["内部资源读取与比较"]
+```
+
+## 分卷与校验
+
+一次更新可能对应多个 ZIP。读取 `DeltaPathSubItem` 后要在所有分卷中定位条目，才能判断更新包是否齐全。 [补丁读取](../src/FFXIVPatchParser/PatchArchive.cs) · [补丁目录](../src/FFXIVPatchParser/PatchCatalog.cs)
+
+| 依据 | 核对对象 |
+| --- | --- |
+| HTTP Range 探测 | 当次资源可读，服务端报告的总长度与清单一致 |
+| ZIP 大小与外部 MD5 | 完整下载的 ZIP 与清单一致 |
+| `DeltaPathSubItem` | 目标游戏路径对应的差分条目 |
+| `DeltaMD5SubItem` | 从 ZIP 解压出的 VCDIFF 字节 |
+| `OriginMD5SubItem` | VCDIFF 要求的旧文件 |
+| `ResultMD5SubItem` | 差分输出或本地目标文件 |
+
+2026-11-12 的目录包含 24 条更新、33 个包文件。全部通过可访问性和 Range 长度探测，清单大小合计 26,072,453,676 字节。本次完整下载的是 `.30 → .31`，大小 58,179,787 字节，MD5 为 `A4C947EAABA40778B23AEE08BDE6EED5`，校验通过。三个 Excel 差分通过 DeltaMD5，当前对应 Excel 文件均匹配 ResultMD5。
+
+补丁目录缓存稳定的资源路径，每次下载时再生成签名 URL。下载先写 `.partial`，校验大小和 MD5 后改为正式文件名。已有完整文件通过校验时直接复用。 [下载实现](../src/FFXIVPatchParser/PatchCatalog.cs) · [上游 CDN 签名](https://github.com/AtmoOmen/FFXIVQuickLauncher/blob/65972f758b47615f321d4f3da509e3ade3b14489/src/XIVLauncher.GamePatchV3/CDNLinkSigner.cs)
+
+## 历史补丁需要匹配的旧文件
+
+早期检查的五个 ZIP 包含 `.19 → .20`、`.20 → .21`、`.23 → .25`、`.25 → .26`、`.27 → .29`，合计 1,860,145,418 字节。其中九个 Excel 差分合计 12,254,867 字节，9/9 通过差分 MD5。当前 Excel 文件却没有匹配这九条记录中的任何对应 OriginMD5 或 ResultMD5。
+
+VCDIFF 用旧文件正向构造目标，被删除或覆盖的旧字节可能没有保存在差分里。要复现历史更新，先找齐匹配 `OriginMD5SubItem` 的容器及配套索引，再按版本顺序应用差分。 [VCDIFF 格式规范](https://www.rfc-editor.org/rfc/rfc3284)
+
+上游安装器用 xdelta3 把差分写到临时文件，校验结果后替换旧文件。合并失败时，安装器可下载完整的最新目标文件来完成客户端更新。 [GamePatchInstaller](https://github.com/AtmoOmen/FFXIVQuickLauncher/blob/65972f758b47615f321d4f3da509e3ade3b14489/src/XIVLauncher.GamePatchV3/Update/GamePatchInstaller.cs) · [xdelta3 桥接](https://github.com/AtmoOmen/FFXIVQuickLauncher/blob/65972f758b47615f321d4f3da509e3ade3b14489/src/XIVLauncher.XdeltaShim/src/xdelta_bridge.c)
+
+当前表格 Diff 使用按构建匹配的历史 CHS CSV 比较导出值。媒体 Diff 从补丁里读写入区间，在本地目标容器中筛选候选。完整的 VCDIFF 历史还原尚未实现。 [表格 Diff 与关联](table-diff.md) · [SqPack 与媒体](sqpack-media.md) · [复现实验与验证](verification.md)

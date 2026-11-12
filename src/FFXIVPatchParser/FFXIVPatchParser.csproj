@@ -1,4 +1,21 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup><OutputType>Exe</OutputType><TargetFramework>net10.0</TargetFramework></PropertyGroup>
-  <ItemGroup><PackageReference Include="Lumina" Version="7.7.2" /></ItemGroup>
+  <PropertyGroup Condition="'$(UseDalamudLibraries)' == 'true' and '$(DalamudLibPath)' == '' and '$(APPDATA)' != ''">
+    <DalamudLibPath>$(APPDATA)/XIVLauncherCN/addon/Hooks/dev</DalamudLibPath>
+  </PropertyGroup>
+  <ItemGroup Condition="'$(UseDalamudLibraries)' != 'true'">
+    <PackageReference Include="Lumina" Version="7.7.2" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(UseDalamudLibraries)' == 'true'">
+    <DalamudLibrary Include="Lumina;BCnEncoder;CommunityToolkit.HighPerformance;Microsoft.Extensions.ObjectPool">
+      <HintPath>$(DalamudLibPath)/%(Identity).dll</HintPath>
+      <Private>true</Private>
+    </DalamudLibrary>
+    <Reference Include="@(DalamudLibrary)" />
+  </ItemGroup>
+  <Target Name="ValidateDalamudLibraries" BeforeTargets="ResolveAssemblyReferences" Condition="'$(UseDalamudLibraries)' == 'true'">
+    <Error Condition="'$(DalamudLibPath)' == ''" Text="Set DalamudLibPath to the XIVLauncherCN addon/Hooks/dev directory." />
+    <Error Condition="!Exists('%(DalamudLibrary.HintPath)')"
+           Text="Missing %(DalamudLibrary.Identity).dll in DalamudLibPath ($(DalamudLibPath))." />
+  </Target>
 </Project>

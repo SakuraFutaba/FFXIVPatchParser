@@ -5,7 +5,7 @@ using System.Windows.Media;
 
 namespace FFXIVPatchParser.Desktop;
 
-public sealed record DisplayCell(string Text, SolidColorBrush Background, SolidColorBrush Accent, IReadOnlyList<TextSpan> Spans);
+public sealed record DisplayCell(string Text, SolidColorBrush Background, SolidColorBrush Accent, IReadOnlyList<TextSpan> Spans, bool IsReference = false);
 
 public static class InlineHighlight
 {
@@ -25,6 +25,7 @@ public static class InlineHighlight
         foreach (var part in cell.Spans)
         {
             var run = new Run(part.Text);
+            if (cell.IsReference) { run.Foreground = Brushes.RoyalBlue; run.FontWeight = FontWeights.SemiBold; }
             if (part.Changed) { run.Background = cell.Accent; run.FontWeight = FontWeights.SemiBold; }
             yield return run;
         }

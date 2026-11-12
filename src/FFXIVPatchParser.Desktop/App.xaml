@@ -1,5 +1,7 @@
 <Application x:Class="FFXIVPatchParser.Desktop.App" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" StartupUri="MainWindow.xaml">
 <Application.Resources>
+ <ResourceDictionary>
+  <ResourceDictionary.MergedDictionaries><ResourceDictionary Source="CompactTrees.xaml"/></ResourceDictionary.MergedDictionaries>
   <SolidColorBrush x:Key="Ink" Color="#182230"/>
   <SolidColorBrush x:Key="Muted" Color="#667085"/>
   <Style TargetType="Window"><Setter Property="FontFamily" Value="Microsoft YaHei UI"/><Setter Property="FontSize" Value="13"/><Setter Property="Foreground" Value="{StaticResource Ink}"/></Style>
@@ -8,12 +10,21 @@
     <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border x:Name="box" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="{TemplateBinding Padding}"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="box" Property="Opacity" Value=".8"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter TargetName="box" Property="Opacity" Value=".45"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
   </Style>
   <Style x:Key="Primary" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Setter Property="Background" Value="#2563EB"/><Setter Property="BorderBrush" Value="#2563EB"/><Setter Property="Foreground" Value="White"/></Style>
+  <Style x:Key="CellIconLink" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+    <Setter Property="Padding" Value="0"/><Setter Property="Margin" Value="0"/>
+    <Setter Property="Background" Value="Transparent"/><Setter Property="BorderBrush" Value="Transparent"/>
+    <Setter Property="HorizontalAlignment" Value="Left"/>
+    <Setter Property="AutomationProperties.Name" Value="打开本地图标"/>
+  </Style>
   <Style TargetType="TextBox">
     <Setter Property="Padding" Value="8,5"/><Setter Property="BorderBrush" Value="#D0D7DE"/><Setter Property="BorderThickness" Value="1"/><Setter Property="Background" Value="White"/><Setter Property="VerticalContentAlignment" Value="Center"/>
     <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="TextBox">
       <Border BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" Background="{TemplateBinding Background}" CornerRadius="4">
-        <Grid><ScrollViewer x:Name="PART_ContentHost" Margin="{TemplateBinding Padding}"/>
-          <TextBlock x:Name="hint" Text="{TemplateBinding Tag}" Margin="{TemplateBinding Padding}" VerticalAlignment="Center" Foreground="#98A2B3" IsHitTestVisible="False" Visibility="Collapsed"/>
+        <Grid>
+          <ScrollViewer x:Name="PART_ContentHost" BorderThickness="0" Focusable="False"/>
+          <TextBlock x:Name="hint" Text="{TemplateBinding Tag}" Margin="{TemplateBinding Padding}" Padding="2,0"
+                     TextAlignment="{TemplateBinding TextAlignment}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                     Foreground="#98A2B3" IsHitTestVisible="False" Visibility="Collapsed"/>
         </Grid>
       </Border>
       <ControlTemplate.Triggers><Trigger Property="Text" Value=""><Setter TargetName="hint" Property="Visibility" Value="Visible"/></Trigger><Trigger Property="IsKeyboardFocused" Value="True"><Setter Property="BorderBrush" Value="#6B9AF5"/></Trigger></ControlTemplate.Triggers>
@@ -28,10 +39,49 @@
     <Setter Property="SelectionMode" Value="Single"/>
   </Style>
   <Style TargetType="DataGridColumnHeader"><Setter Property="Background" Value="#F6F8FA"/><Setter Property="Foreground" Value="#667085"/><Setter Property="Padding" Value="10,7"/><Setter Property="FontWeight" Value="SemiBold"/><Setter Property="BorderBrush" Value="#E4E7EC"/><Setter Property="BorderThickness" Value="0,0,0,1"/></Style>
+  <Style x:Key="HiddenTableRowHeader" TargetType="DataGridRowHeader"><Setter Property="Template" Value="{x:Null}"/></Style>
   <Style TargetType="DataGridCell"><Setter Property="Padding" Value="10,0"/><Setter Property="BorderThickness" Value="0"/><Setter Property="VerticalContentAlignment" Value="Center"/><Setter Property="Template"><Setter.Value><ControlTemplate TargetType="DataGridCell"><Border Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}"><ContentPresenter VerticalAlignment="Center"/></Border></ControlTemplate></Setter.Value></Setter></Style>
   <Style x:Key="Nav" TargetType="RadioButton">
     <Setter Property="Foreground" Value="#AAB8CC"/><Setter Property="Padding" Value="12,10"/><Setter Property="Margin" Value="8,3"/><Setter Property="Cursor" Value="Hand"/>
     <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="RadioButton"><Border x:Name="box" CornerRadius="6" Background="Transparent" Padding="{TemplateBinding Padding}"><ContentPresenter/></Border><ControlTemplate.Triggers><Trigger Property="IsChecked" Value="True"><Setter TargetName="box" Property="Background" Value="#203653"/><Setter Property="Foreground" Value="White"/><Setter Property="FontWeight" Value="SemiBold"/></Trigger><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="box" Property="Background" Value="#203653"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
   </Style>
+  <Style x:Key="NavChild" TargetType="RadioButton" BasedOn="{StaticResource Nav}">
+    <Setter Property="Padding" Value="24,7"/><Setter Property="Margin" Value="8,1"/>
+  </Style>
+  <Style x:Key="NavigationGroup" TargetType="Expander">
+    <Setter Property="Foreground" Value="#D2DDEC"/><Setter Property="Margin" Value="8,5,8,4"/>
+    <Setter Property="Template">
+      <Setter.Value>
+        <ControlTemplate TargetType="Expander">
+          <StackPanel>
+            <ToggleButton IsChecked="{Binding IsExpanded, RelativeSource={RelativeSource TemplatedParent}}"
+                          Foreground="{TemplateBinding Foreground}" Background="Transparent" Cursor="Hand"
+                          AutomationProperties.Name="{Binding Header, RelativeSource={RelativeSource TemplatedParent}}"
+                          Content="{TemplateBinding Header}">
+              <ToggleButton.Template>
+                <ControlTemplate TargetType="ToggleButton">
+                  <Border x:Name="HeaderBox" Padding="11,7" Background="{TemplateBinding Background}" CornerRadius="6">
+                    <DockPanel>
+                      <TextBlock x:Name="Arrow" DockPanel.Dock="Right" Text="▸" Margin="6,0,0,0"/>
+                      <ContentPresenter VerticalAlignment="Center"/>
+                    </DockPanel>
+                  </Border>
+                  <ControlTemplate.Triggers>
+                    <Trigger Property="IsChecked" Value="True"><Setter TargetName="Arrow" Property="Text" Value="▾"/></Trigger>
+                    <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="HeaderBox" Property="Background" Value="#203653"/></Trigger>
+                  </ControlTemplate.Triggers>
+                </ControlTemplate>
+              </ToggleButton.Template>
+            </ToggleButton>
+            <ContentPresenter x:Name="GroupContent" Visibility="Collapsed"/>
+          </StackPanel>
+          <ControlTemplate.Triggers>
+            <Trigger Property="IsExpanded" Value="True"><Setter TargetName="GroupContent" Property="Visibility" Value="Visible"/></Trigger>
+          </ControlTemplate.Triggers>
+        </ControlTemplate>
+      </Setter.Value>
+    </Setter>
+  </Style>
+ </ResourceDictionary>
 </Application.Resources>
 </Application>

@@ -1,0 +1,152 @@
+<UserControl x:Class="FFXIVPatchParser.Desktop.ModelPreview"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Unloaded="PreviewUnloaded" IsVisibleChanged="PreviewVisibilityChanged">
+  <DockPanel>
+    <Grid x:Name="Browser" DockPanel.Dock="Left" Width="240" Margin="0,0,8,0">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="*"/>
+        <RowDefinition Height="Auto"/>
+      </Grid.RowDefinitions>
+      <StackPanel Margin="0,0,0,6">
+        <ComboBox x:Name="ModelMode" SelectedIndex="0" SelectionChanged="ModelModeChanged" Margin="0,0,0,6" AutomationProperties.Name="模型目录视图">
+          <ComboBoxItem Content="按名称分类"/>
+          <ComboBoxItem Content="按模型编号"/>
+          <ComboBoxItem Content="扫描容器索引"/>
+        </ComboBox>
+        <DockPanel>
+          <Button x:Name="ScanButton" DockPanel.Dock="Right" Content="读取目录" Click="ScanModels" Margin="6,0,0,0"/>
+          <TextBox x:Name="ModelSearch" Tag="名称、编号或路径…" AutomationProperties.Name="筛选模型"
+                   TextChanged="FilterModels" IsEnabled="False"/>
+        </DockPanel>
+        <Button x:Name="NpcNamesButton" Content="补充 NPC 名称" Click="DownloadNpcNames" Padding="6,3" Margin="0,6,0,0" HorizontalAlignment="Left"/>
+        <Button x:Name="ModelPathsButton" Content="导入已知模型路径" Click="ImportModelPaths" Padding="6,3" Margin="0,6,0,0" HorizontalAlignment="Left" Visibility="Collapsed"
+                ToolTip="导入每行一个游戏内 .mdl 路径的 UTF-8 文本。匹配本地索引后显示路径，未知项仍保留 SqPack 地址。"/>
+        <CheckBox x:Name="ScanAllModels" Content="包含场景等模型（较慢）" Margin="0,6,0,0" Visibility="Collapsed"
+                  ToolTip="默认扫描角色容器。勾选后再次扫描可查找其他容器中的模型。"/>
+      </StackPanel>
+      <TreeView x:Name="ModelTree" Grid.Row="1" Style="{StaticResource CompactPathTree}" SelectedItemChanged="ModelSelected">
+        <TreeView.ItemTemplate>
+          <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+            <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" ToolTip="{Binding FullPath}"/>
+          </HierarchicalDataTemplate>
+        </TreeView.ItemTemplate>
+      </TreeView>
+      <TextBlock x:Name="BrowserStatus" Grid.Row="2" Text="尚未扫描" Foreground="{StaticResource Muted}" Margin="0,6,0,0"
+                 TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+    </Grid>
+    <Grid>
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="*"/>
+        <RowDefinition Height="Auto"/>
+      </Grid.RowDefinitions>
+      <DockPanel Margin="0,0,0,6">
+        <Button x:Name="LoadButton" DockPanel.Dock="Right" Content="读取模型" Style="{StaticResource Primary}" Click="LoadModel" Margin="6,0,0,0"/>
+        <TextBox x:Name="ModelPath" Tag="输入 SqPack 内的 .mdl 路径…" KeyDown="ModelPathKeyDown"
+                 AutomationProperties.Name="模型路径" ToolTip="例如 chara/human/c0101/obj/hair/h0001/model/c0101h0001_hir.mdl"/>
+      </DockPanel>
+      <WrapPanel Grid.Row="1" Margin="0,0,0,6">
+        <Button x:Name="ResetButton" Content="重置视图" Padding="9,4" IsEnabled="False" Click="ResetView"/>
+        <CheckBox x:Name="UseTextures" Content="基础色纹理" IsChecked="True" IsEnabled="False" Margin="0,0,12,0"
+                  VerticalAlignment="Center" Checked="ChangeDisplay" Unchecked="ChangeDisplay"/>
+        <TextBlock Text="材质变体" VerticalAlignment="Center" Margin="0,0,6,0"/>
+        <TextBox x:Name="MaterialVariant" Text="1" Width="43" Padding="5,3" KeyDown="ModelPathKeyDown"
+                 AutomationProperties.Name="材质变体" ToolTip="输入变体编号后按 Enter 或重新读取模型"/>
+      </WrapPanel>
+      <DockPanel Grid.Row="2">
+        <Border x:Name="Inspector" DockPanel.Dock="Right" Width="208" Margin="8,0,0,0" Background="White"
+                BorderBrush="#E4E7EC" BorderThickness="1" CornerRadius="6" Padding="9" Visibility="Collapsed">
+          <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel>
+              <TextBlock x:Name="ModelEntryInfo" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+              <WrapPanel x:Name="ModelTableLinks" Visibility="Collapsed" Margin="0,0,0,8">
+                <Button Content="来源行" Tag="source" Click="OpenModelTable" Padding="5,3" Margin="0,0,4,3"/>
+                <Button x:Name="NameTableLink" Content="名称行" Tag="name" Click="OpenModelTable" Padding="5,3" Margin="0,0,4,3"/>
+                <Button Content="ModelChara" Tag="model" Click="OpenModelTable" Padding="5,3" Margin="0,0,0,3"/>
+              </WrapPanel>
+              <TextBlock Text="材质" FontWeight="SemiBold" Margin="0,0,0,5"/>
+              <ComboBox x:Name="MaterialChoice" SelectionChanged="MaterialSelected" DisplayMemberPath="Label"
+                        AutomationProperties.Name="材质筛选" Padding="5,3" HorizontalContentAlignment="Stretch"/>
+              <TextBlock x:Name="MaterialDetails" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+              <ComboBox x:Name="TextureChoice" SelectionChanged="TextureSelected" DisplayMemberPath="Label"
+                        AutomationProperties.Name="材质贴图" Padding="5,3" Margin="0,8,0,0" Visibility="Collapsed"/>
+              <Image x:Name="TextureImage" Height="100" Stretch="Uniform" Visibility="Collapsed" Margin="0,6,0,0"/>
+              <TextBlock x:Name="TextureStatus" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,5,0,0"/>
+              <Separator Margin="0,8"/>
+              <TextBlock Text="骨骼与动作" FontWeight="SemiBold" Margin="0,0,0,5"/>
+              <TextBlock x:Name="AnimationStatus" Foreground="{StaticResource Muted}" TextWrapping="Wrap"/>
+              <Expander x:Name="BoneList" Header="骨骼名称" Margin="0,6,0,0">
+                <TextBox x:Name="BoneNames" IsReadOnly="True" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap" MaxHeight="150"/>
+              </Expander>
+              <Expander x:Name="ActionList" Header="动作资源" Margin="0,8,0,0" Expanded="ActionListExpanded">
+                <StackPanel Margin="0,5,0,0">
+                  <TextBox x:Name="ActionFilter" Tag="筛选动作候选…" AutomationProperties.Name="筛选动作候选"
+                           IsEnabled="False" TextChanged="FilterActions" Padding="5,3" Margin="0,0,0,5"/>
+                  <ComboBox x:Name="ActionChoice" SelectionChanged="ActionSelected" ScrollViewer.CanContentScroll="True"
+                            VirtualizingPanel.VirtualizationMode="Recycling" AutomationProperties.Name="模型动作资源" IsEnabled="False" Padding="5,3">
+                    <ComboBox.ItemsPanel>
+                      <ItemsPanelTemplate><VirtualizingStackPanel/></ItemsPanelTemplate>
+                    </ComboBox.ItemsPanel>
+                    <ComboBox.ItemTemplate>
+                      <DataTemplate><TextBlock Text="{Binding Label}" ToolTip="{Binding Path}" TextTrimming="CharacterEllipsis"/></DataTemplate>
+                    </ComboBox.ItemTemplate>
+                  </ComboBox>
+                  <TextBlock x:Name="ActionDiscoveryStatus" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,5,0,0"/>
+                  <DockPanel Margin="0,6,0,0">
+                    <Button Content="读取" DockPanel.Dock="Right" Click="LoadAction" Padding="5,3" Margin="4,0,0,0"/>
+                    <TextBox x:Name="ActionPath" Tag="输入 .pap 路径…" Padding="5,3" KeyDown="ActionPathKeyDown"
+                             AutomationProperties.Name="动作资源路径"/>
+                  </DockPanel>
+                  <TextBlock x:Name="ActionMetadataStatus" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,5,0,0"/>
+                  <ComboBox x:Name="PlaybackSlot" Visibility="Collapsed" SelectionChanged="PlaybackSlotChanged" AutomationProperties.Name="动作槽" Margin="0,5,0,0">
+                    <ComboBox.ItemTemplate><DataTemplate><TextBlock><Run Text="{Binding Index, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding Name, Mode=OneWay}"/></TextBlock></DataTemplate></ComboBox.ItemTemplate>
+                  </ComboBox>
+                  <WrapPanel Margin="0,5,0,0">
+                    <Button x:Name="PlaybackStart" Content="播放" Click="PlayAnimation" Padding="7,4" IsEnabled="False"/>
+                    <Button x:Name="PlaybackStop" Content="停止" Click="StopAnimation" Padding="7,4" IsEnabled="False"/>
+                    <Button Content="Godbert…" Click="ChooseGodbert" Padding="7,4" Margin="0" ToolTip="选择包含 hkAnimationInterop.dll 的已安装 Godbert 目录"/>
+                  </WrapPanel>
+                  <TextBlock x:Name="PlaybackStatus" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,5,0,0"/>
+                </StackPanel>
+              </Expander>
+            </StackPanel>
+          </ScrollViewer>
+        </Border>
+        <Border x:Name="ModelSurface" Background="#202B3A" CornerRadius="6" ClipToBounds="True"
+                SizeChanged="ResizeViewport" MouseDown="StartDrag" MouseMove="DragModel" MouseUp="EndDrag"
+                LostMouseCapture="StopDrag" MouseWheel="ZoomWithWheel">
+          <Grid>
+            <Viewport3D x:Name="ModelViewport" IsHitTestVisible="False" ClipToBounds="True">
+              <Viewport3D.Camera>
+                <OrthographicCamera x:Name="ViewCamera" Position="0,0,4" LookDirection="0,0,-4" Width="3"
+                                    NearPlaneDistance="0.05" FarPlaneDistance="20"/>
+              </Viewport3D.Camera>
+              <ModelVisual3D>
+                <ModelVisual3D.Content>
+                  <Model3DGroup>
+                    <AmbientLight Color="#717985"/>
+                    <DirectionalLight Color="#ECEFF5" Direction="-1,-2,-3"/>
+                    <DirectionalLight Color="#677C97" Direction="2,-0.2,1"/>
+                  </Model3DGroup>
+                </ModelVisual3D.Content>
+              </ModelVisual3D>
+              <ModelVisual3D x:Name="ModelVisual"/>
+            </Viewport3D>
+            <TextBlock x:Name="EmptyViewport" Text="选择或输入模型路径" Foreground="#CFD8E5" Margin="12"
+                       HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center"
+                       IsHitTestVisible="False"/>
+            <TextBlock x:Name="CameraHelp" Text="左键旋转 · 中键或右键平移 · 滚轮缩放" Foreground="#CFD8E5"
+                       HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="10,0,10,8"
+                       TextWrapping="Wrap" IsHitTestVisible="False" Visibility="Collapsed"/>
+          </Grid>
+        </Border>
+      </DockPanel>
+      <TextBlock x:Name="ModelInfo" Grid.Row="3" Foreground="{StaticResource Muted}" Margin="0,6,0,0"
+                 TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"
+                 AutomationProperties.LiveSetting="Polite"/>
+    </Grid>
+  </DockPanel>
+</UserControl>

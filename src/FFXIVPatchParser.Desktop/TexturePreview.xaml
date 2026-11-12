@@ -1,0 +1,55 @@
+<UserControl x:Class="FFXIVPatchParser.Desktop.TexturePreview"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+  <UserControl.Resources>
+    <DrawingBrush x:Key="Checkerboard" TileMode="Tile" Viewport="0,0,16,16" ViewportUnits="Absolute">
+      <DrawingBrush.Drawing>
+        <DrawingGroup>
+          <GeometryDrawing Brush="#F6F8FA" Geometry="M0,0 H16 V16 H0 Z"/>
+          <GeometryDrawing Brush="#E3E8EE" Geometry="M0,0 H8 V8 H0 Z M8,8 H16 V16 H8 Z"/>
+        </DrawingGroup>
+      </DrawingBrush.Drawing>
+    </DrawingBrush>
+    <Style x:Key="PreviewButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+      <Setter Property="Padding" Value="9,5"/>
+      <Setter Property="Margin" Value="0,0,6,4"/>
+      <Setter Property="Height" Value="30"/>
+    </Style>
+  </UserControl.Resources>
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="*"/>
+      <RowDefinition Height="Auto"/>
+    </Grid.RowDefinitions>
+    <WrapPanel x:Name="Actions" Margin="0,0,0,4" IsEnabled="False">
+      <Button Content="适应窗口" ToolTip="重置缩放与位置" Click="FitImage" Style="{StaticResource PreviewButton}"/>
+      <Button Content="100%" ToolTip="居中显示原始像素大小" Click="ShowActualSize" Style="{StaticResource PreviewButton}"/>
+      <ComboBox x:Name="BackgroundChoice" Height="30" Margin="0,0,6,4" Padding="7,3" SelectedIndex="0"
+                SelectionChanged="ChangeBackground" AutomationProperties.Name="预览背景">
+        <ComboBoxItem Content="棋盘背景"/>
+        <ComboBoxItem Content="深色背景"/>
+        <ComboBoxItem Content="浅色背景"/>
+      </ComboBox>
+      <Button x:Name="CopyPathButton" Content="复制路径" Click="CopyPath" Style="{StaticResource PreviewButton}"/>
+      <Button x:Name="SavePngButton" Content="保存 PNG…" ToolTip="保存原始分辨率和透明通道" Click="SavePng" Style="{StaticResource PreviewButton}"/>
+    </WrapPanel>
+    <Border Grid.Row="1" BorderBrush="#E4E7EC" BorderThickness="1">
+      <Canvas x:Name="Viewport" MinHeight="80" ClipToBounds="True" Background="{StaticResource Checkerboard}"
+              SizeChanged="ResizeViewport" MouseWheel="ZoomWithWheel" MouseLeftButtonDown="StartPan"
+              MouseMove="PanImage" MouseLeftButtonUp="EndPan" LostMouseCapture="StopPan">
+        <Image x:Name="PreviewImage" Stretch="Fill" IsHitTestVisible="False">
+          <Image.RenderTransform>
+            <MatrixTransform x:Name="ImageTransform"/>
+          </Image.RenderTransform>
+        </Image>
+      </Canvas>
+    </Border>
+    <StackPanel Grid.Row="2" Margin="0,6,0,0">
+      <TextBlock x:Name="ImageInfo" Foreground="{StaticResource Muted}" Text="选择一张图片以预览"
+                 TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"/>
+      <TextBlock x:Name="ActionStatus" Visibility="Collapsed" Foreground="{StaticResource Muted}" TextTrimming="CharacterEllipsis"
+                 AutomationProperties.LiveSetting="Polite"/>
+    </StackPanel>
+  </Grid>
+</UserControl>

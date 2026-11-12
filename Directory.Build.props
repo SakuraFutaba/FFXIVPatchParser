@@ -7,4 +7,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(UseDalamudLibraries)' == 'true'">
+    <BaseIntermediateOutputPath>$(BaseIntermediateOutputPath)dalamud/</BaseIntermediateOutputPath>
+    <BaseOutputPath>$(BaseOutputPath)dalamud/</BaseOutputPath>
+    <NuGetLockFilePath Condition="'$(NuGetLockFilePath)' == ''">$(BaseIntermediateOutputPath)packages.lock.json</NuGetLockFilePath>
+  </PropertyGroup>
 </Project>

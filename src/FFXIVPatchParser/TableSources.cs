@@ -33,9 +33,11 @@ public static class SheetComparison
         }).OfType<SheetChange>().ToArray();
     }
 }
-public sealed class RawSnapshotSource : ITableSource
+public sealed class RawSnapshotSource : ITableSource, IRelationSchemaSource
 {
     private readonly string root;
+    private readonly string? gameVersion;
+    private DataminingSource? semantic;
     private readonly Dictionary<string, (string Schema, string Rows, string Hash)> files = new();
     public string Label { get; }
     public string Format => "RawSnapshot-v1";
@@ -49,7 +51,8 @@ public sealed class RawSnapshotSource : ITableSource
         if (manifest.GetProperty("kind").GetString() != "FFXIVRawExcelSnapshot" || manifest.GetProperty("formatVersion").GetInt32() != 1 || !manifest.GetProperty("complete").GetBoolean())
             throw new InvalidDataException("请选择完整的 Raw Excel 快照 manifest.json（格式 v1）。");
         IsFullSnapshot = manifest.GetProperty("selectedSheetCount").GetInt32() == manifest.GetProperty("discoveredSheetCount").GetInt32();
-        Label = "Raw · " + manifest.GetProperty("gameVersion").GetString();
+        gameVersion = manifest.GetProperty("gameVersion").GetString();
+        Label = "Raw · " + gameVersion;
         var sheets = new Dictionary<string, SheetEntry>();
         foreach (var entry in manifest.GetProperty("sheets").EnumerateArray())
         {
@@ -64,6 +67,12 @@ public sealed class RawSnapshotSource : ITableSource
             sheets.Add(name, new SheetEntry(name, fingerprint));
         }
         Sheets = sheets;
+    }
+    public async Task<SheetData?> ReadSemanticSchema(string sheet, CancellationToken token)
+    {
+        if (string.IsNullOrEmpty(gameVersion)) return null;
+        semantic ??= await DataminingSource.ForBuild(gameVersion, token);
+        return await semantic.ReadSchema(sheet, token);
     }
     public Task<SheetData?> Read(string name, CancellationToken token) => Task.Run<SheetData?>(() =>
     {
@@ -99,7 +108,7 @@ public sealed class RawSnapshotSource : ITableSource
 }
 public static class CsvSheetReader
 {
-    public static SheetData Read(string path, CancellationToken token = default)
+    public static SheetData Read(string path, CancellationToken token = default, bool schemaOnly = false)
     {
         using var parser = new TextFieldParser(path, System.Text.Encoding.UTF8) { TextFieldType = FieldType.Delimited, HasFieldsEnclosedInQuotes = true, TrimWhiteSpace = false };
         parser.SetDelimiters(",");
@@ -109,7 +118,7 @@ public static class CsvSheetReader
         if (ids.Length != names.Length || ids.Length != types.Length || ids[0].TrimStart('\uFEFF') != "key") throw new InvalidDataException("不是支持的 CHS datamining CSV 格式。");
         var columns = ids.Skip(1).Select((id, i) => new SheetColumn(id, string.IsNullOrEmpty(names[i + 1]) ? "Column" + id : names[i + 1], types[i + 1])).ToArray();
         var rows = new Dictionary<RowKey, SheetCell[]>();
-        while (!parser.EndOfData)
+        while (!schemaOnly && !parser.EndOfData)
         {
             token.ThrowIfCancellationRequested();
             var row = parser.ReadFields();

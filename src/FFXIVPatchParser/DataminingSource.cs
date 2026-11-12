@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -9,11 +10,31 @@ public sealed class DataminingSource : ITableSource
 {
     private const string Repository = "InfSein/ffxiv-datamining-mixed";
     private readonly string commit;
+    private static readonly SemaphoreSlim downloadSlots = new(4, 4);
+    private static readonly ConcurrentDictionary<string, Lazy<Task>> downloads = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, (long Length, long Modified)> verifiedFiles = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, SheetData> schemas = new(StringComparer.Ordinal);
     public string Label { get; }
     public string Format => "DataminingCsv";
     public IReadOnlyDictionary<string, SheetEntry> Sheets { get; }
     private static string Cache => Path.Combine(Workspace.Temp, "ui", "datamining");
     private DataminingSource(string commit, string label, Dictionary<string, SheetEntry> sheets) { this.commit = commit; Label = label; Sheets = sheets; }
+
+    public static async Task<DataminingSource> ForBuild(string build, CancellationToken token = default)
+    {
+        if (!Regex.IsMatch(build, @"^\d{4}\.\d{2}\.\d{2}\.\d{4}\.\d{4}$")) throw new InvalidDataException("无效游戏构建号。");
+        for (var attempt = 0; attempt < 2; attempt++)
+        {
+            using var commits = await Json("commits-chs.json", "commits?path=chs&per_page=100", attempt == 0, token);
+            foreach (var c in commits.RootElement.EnumerateArray())
+            {
+                var message = c.GetProperty("commit").GetProperty("message").GetString()!;
+                if (Regex.Matches(message, @"\d{4}\.\d{2}\.\d{2}\.\d{4}\.\d{4}").Any(m => m.Value == build))
+                    return await Create(c.GetProperty("sha").GetString()!, message.Split('\n')[0].Replace("data: ", ""), token);
+            }
+        }
+        throw new InvalidDataException($"CHS 仓库没有准确构建 {build}，不能使用邻近版本定义。");
+    }
 
     public static async Task<(ITableSource Before, ITableSource After)> ForPatch(string from, string to, IProgress<string>? progress, CancellationToken token)
     {
@@ -28,7 +49,7 @@ public sealed class DataminingSource : ITableSource
         {
             var package = versions.RootElement.GetProperty("packages").EnumerateArray().FirstOrDefault(p => p.GetProperty("to").GetString() == value);
             var build = package.ValueKind == JsonValueKind.Undefined ? "" : package.GetProperty("versionView").GetString()!.Split('_')[0];
-            if (!Regex.IsMatch(build, @"^\d{4}\.\d{2}\.\d{2}\.\d{4}\.\d{4}$")) throw new InvalidDataException($"官方元数据没有版本 {value} 的准确构建号，请选择本地快照。");
+            if (!Regex.IsMatch(build, @"^\d{4}\.\d{2}\.\d{2}\.\d{4}\.\d{4}$")) throw new InvalidDataException($"官方元数据没有版本 {value} 的准确构建号。");
             return build;
         }
         progress?.Report("正在匹配 CHS 历史版本…");
@@ -41,7 +62,7 @@ public sealed class DataminingSource : ITableSource
                 if (Regex.Matches(message, @"\d{4}\.\d{2}\.\d{2}\.\d{4}\.\d{4}").Any(m => m.Value == build))
                     return (c.GetProperty("sha").GetString()!, message.Split('\n')[0].Replace("data: ", ""));
             }
-            throw new InvalidDataException($"CHS 仓库近期提交中没有构建 {build}，不能用邻近版本代替。可改用两份本地快照。");
+            throw new InvalidDataException($"CHS 仓库近期提交中没有构建 {build}，不能用邻近版本代替。");
         }
         var left = Find(Build(from)); var right = Find(Build(to));
         progress?.Report("正在比较两个版本的表文件索引…");
@@ -60,11 +81,67 @@ public sealed class DataminingSource : ITableSource
         return new DataminingSource(commit, $"{label} · {commit[..7]}", sheets);
     }
 
+    public async Task<SheetData?> ReadSchema(string name, CancellationToken token)
+    {
+        if (schemas.TryGetValue(name, out var schema)) return schema;
+        var path = await CachedCsv(name, token);
+        if (path == null) return null;
+        schema = await Task.Run(() => CsvSheetReader.Read(path, token, schemaOnly: true), token);
+        schemas[name] = schema;
+        return schema;
+    }
+
     public async Task<SheetData?> Read(string name, CancellationToken token)
+    {
+        var path = await CachedCsv(name, token);
+        return path == null ? null : await Task.Run(() => CsvSheetReader.Read(path, token), token);
+    }
+
+    private async Task<string?> CachedCsv(string name, CancellationToken token)
     {
         if (!Sheets.ContainsKey(name)) return null;
         var target = Workspace.Within(Path.Combine(Cache, commit), name + ".csv");
         if (!File.Exists(target))
+        {
+            // A short UI budget must not repeatedly discard a large download. Concurrent
+            // readers share one bounded HTTP transfer; only their wait is cancelled.
+            var pending = downloads.GetOrAdd(target, _ => new Lazy<Task>(() => DownloadCsv(name, target)));
+            var transfer = pending.Value;
+            _ = transfer.ContinueWith(completed =>
+            {
+                downloads.TryRemove(new KeyValuePair<string, Lazy<Task>>(target, pending));
+                _ = completed.Exception; // Observe failure even if every waiter cancelled.
+            }, CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+            await transfer.WaitAsync(token);
+        }
+        var info = new FileInfo(target);
+        var stamp = (info.Length, info.LastWriteTimeUtc.Ticks);
+        if (verifiedFiles.TryGetValue(name, out var verified) && verified == stamp) return target;
+        // Pin downloaded and cached contents to the tree's Git blob hash.
+        using (var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA1))
+        {
+            await using var stream = File.OpenRead(target);
+            hash.AppendData(Encoding.UTF8.GetBytes($"blob {stream.Length}\0"));
+            var buffer = new byte[131072];
+            while (true)
+            {
+                var count = await stream.ReadAsync(buffer, token);
+                if (count == 0) break;
+                hash.AppendData(buffer, 0, count);
+            }
+            if (!Convert.ToHexString(hash.GetHashAndReset()).Equals(Sheets[name].Fingerprint, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException("CSV 与固定版本的 Git blob 哈希不符，请移除对应 tmp/ui/datamining 缓存后重试。");
+        }
+        verifiedFiles[name] = stamp;
+        return target;
+    }
+
+    private async Task DownloadCsv(string name, string target)
+    {
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(10));
+        var token = timeout.Token;
+        await downloadSlots.WaitAsync(token);
+        try
         {
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
             var uri = $"https://raw.githubusercontent.com/{Repository}/{commit}/chs/" + string.Join("/", name.Split('/').Select(Uri.EscapeDataString)) + ".csv";
@@ -82,22 +159,7 @@ public sealed class DataminingSource : ITableSource
             }
             finally { if (File.Exists(partial)) File.Delete(partial); }
         }
-        // Pin downloaded and cached contents to the tree's Git blob hash.
-        using (var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA1))
-        {
-            await using var stream = File.OpenRead(target);
-            hash.AppendData(Encoding.UTF8.GetBytes($"blob {stream.Length}\0"));
-            var buffer = new byte[131072];
-            while (true)
-            {
-                var count = await stream.ReadAsync(buffer, token);
-                if (count == 0) break;
-                hash.AppendData(buffer, 0, count);
-            }
-            if (!Convert.ToHexString(hash.GetHashAndReset()).Equals(Sheets[name].Fingerprint, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException("CSV 与固定版本的 Git blob 哈希不符，请移除对应 tmp/ui/datamining 缓存后重试。");
-        }
-        return await Task.Run(() => CsvSheetReader.Read(target, token), token);
+        finally { downloadSlots.Release(); }
     }
 
     private static async Task<JsonDocument> Json(string key, string path, bool immutable, CancellationToken token)
