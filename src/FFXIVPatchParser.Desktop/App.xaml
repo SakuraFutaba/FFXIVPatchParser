@@ -10,6 +10,24 @@
     <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border x:Name="box" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="6" Padding="{TemplateBinding Padding}"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="box" Property="Opacity" Value=".8"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter TargetName="box" Property="Opacity" Value=".45"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
   </Style>
   <Style x:Key="Primary" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}"><Setter Property="Background" Value="#2563EB"/><Setter Property="BorderBrush" Value="#2563EB"/><Setter Property="Foreground" Value="White"/></Style>
+  <Style x:Key="MediaPlaybackButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+    <Setter Property="Width" Value="38"/>
+    <Setter Property="Height" Value="30"/>
+    <Setter Property="Padding" Value="0"/>
+  </Style>
+  <Style x:Key="StopPlaybackButton" TargetType="Button" BasedOn="{StaticResource MediaPlaybackButton}">
+    <Setter Property="ToolTip" Value="停止"/>
+    <Setter Property="AutomationProperties.Name" Value="停止"/>
+    <Setter Property="ContentTemplate">
+      <Setter.Value>
+        <DataTemplate>
+          <Path Width="14" Height="14" Data="M 2,2 H 12 V 12 H 2 Z"
+                Fill="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+        </DataTemplate>
+      </Setter.Value>
+    </Setter>
+    <Setter Property="Content" Value="停止"/>
+  </Style>
   <Style x:Key="CellIconLink" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
     <Setter Property="Padding" Value="0"/><Setter Property="Margin" Value="0"/>
     <Setter Property="Background" Value="Transparent"/><Setter Property="BorderBrush" Value="Transparent"/>

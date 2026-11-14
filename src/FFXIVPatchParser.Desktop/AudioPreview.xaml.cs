@@ -23,12 +23,18 @@ public partial class AudioPreview : UserControl
     private string? selectedPath;
     private bool updatingControls;
     private bool playerConverted;
+    private IReadOnlyList<string>? catalogPaths;
+    private bool catalogScanned;
+    private CancellationTokenSource? catalogFilter;
     private int playbackVersion;
 
     public AudioPreview()
     {
         InitializeComponent();
-        timer.Tick += (_, _) => UpdatePosition();
+        timer.Tick += (_, _) =>
+        {
+            if (!PositionSlider.IsMouseCaptureWithin) UpdatePosition();
+        };
     }
 
     public bool ShowBrowser
@@ -37,6 +43,8 @@ public partial class AudioPreview : UserControl
         set
         {
             Browser.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
+            PathInput.Visibility = Browser.Visibility;
+            BrowserColumn.Width = new GridLength(value ? 318 : 0);
             if (value && IsVisible) _ = LoadNamedPathsAsync();
         }
     }
@@ -53,7 +61,12 @@ public partial class AudioPreview : UserControl
         ReleasePlayer();
         SetAudioControls();
         AudioDetails.Text = "选择 .scd 文件以预览";
-        AudioPath.ItemsSource = null;
+        catalogFilter?.Cancel();
+        catalogPaths = null;
+        AudioSearch.Text = "";
+        AudioTree.ItemsSource = null;
+        CatalogStatus.Text = "";
+        catalogScanned = false;
         AudioPath.Text = "";
         Status.Text = "";
         if (IsVisible && ShowBrowser) _ = LoadNamedPathsAsync();
@@ -113,25 +126,87 @@ public partial class AudioPreview : UserControl
         finally { updatingControls = false; }
     }
 
-    private async Task LoadNamedPathsAsync()
+    private Task LoadNamedPathsAsync() => catalogPaths is null && listRequest is null
+        ? LoadCatalogAsync(false) : Task.CompletedTask;
+
+    public Task ScanUnknownAsync(CancellationToken token = default) => LoadCatalogAsync(true, token);
+
+    private async Task LoadCatalogAsync(bool scanUnknown, CancellationToken token = default)
     {
-        if (source is not { } game || listRequest is not null || AudioPath.ItemsSource is not null) return;
-        using var current = new CancellationTokenSource();
+        if (source is not { } game) return;
+        listRequest?.Cancel();
+        using var current = CancellationTokenSource.CreateLinkedTokenSource(token);
         listRequest = current;
+        CatalogStatus.Text = scanUnknown ? "正在扫描音频索引…" : "正在读取已知音频目录…";
+        var progress = new Progress<string>(message =>
+        {
+            if (ReferenceEquals(listRequest, current) && !current.IsCancellationRequested) CatalogStatus.Text = message;
+        });
         try
         {
-            var paths = await Task.Run(() => game.ListNamedAudioPaths(current.Token), current.Token);
-            if (!current.IsCancellationRequested) AudioPath.ItemsSource = paths;
+            var paths = await Task.Run(() =>
+            {
+                var named = game.ListNamedAudioPaths(current.Token);
+                return scanUnknown
+                    ? named.Concat(game.ListAudioLocations(current.Token, progress: progress).Select(entry => entry.Path))
+                        .Distinct(StringComparer.OrdinalIgnoreCase).Order(StringComparer.OrdinalIgnoreCase).ToArray()
+                    : named;
+            }, current.Token);
+            token.ThrowIfCancellationRequested();
+            if (current.IsCancellationRequested || !ReferenceEquals(source, game)) return;
+            catalogPaths = paths;
+            catalogScanned = scanUnknown;
+            await RefreshCatalogAsync();
         }
-        catch (OperationCanceledException) when (current.IsCancellationRequested) { }
-        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException or InvalidOperationException or NotSupportedException)
+        catch (OperationCanceledException) when (current.IsCancellationRequested)
         {
-            if (!current.IsCancellationRequested) AudioPath.ToolTip = $"无法列出背景音乐，可直接输入 .scd 路径。{ex.Message}";
+            if (ReferenceEquals(listRequest, current)) await RefreshCatalogAsync();
+            if (scanUnknown && token.IsCancellationRequested) throw;
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException
+            or InvalidOperationException or NotSupportedException or ArgumentException)
+        {
+            if (!current.IsCancellationRequested) CatalogStatus.Text = $"读取音频目录失败：{ex.Message}";
+            if (scanUnknown) throw;
         }
         finally
         {
             if (ReferenceEquals(listRequest, current)) listRequest = null;
         }
+    }
+
+    private async Task RefreshCatalogAsync()
+    {
+        catalogFilter?.Cancel();
+        using var current = new CancellationTokenSource();
+        catalogFilter = current;
+        var paths = catalogPaths ?? [];
+        var search = AudioSearch.Text;
+        try
+        {
+            var tree = await Task.Run(() => PathTree.Build(paths, path => path, search, token: current.Token), current.Token);
+            if (current.IsCancellationRequested) return;
+            AudioTree.ItemsSource = tree;
+            CatalogStatus.Text = $"{tree.Sum(node => node.LeafCount):N0} / {paths.Count:N0} 个音频" +
+                (catalogScanned ? "（含未识别路径）" : "（已知路径）");
+        }
+        catch (OperationCanceledException) when (current.IsCancellationRequested) { }
+        finally
+        {
+            if (ReferenceEquals(catalogFilter, current)) catalogFilter = null;
+        }
+    }
+
+    private async void FilterAudio(object sender, TextChangedEventArgs e)
+    {
+        if (AudioTree is not null && catalogPaths is not null) await RefreshCatalogAsync();
+    }
+
+    private async void SelectAudio(object sender, RoutedPropertyChangedEventArgs<object> e)
+    {
+        if (e.NewValue is not PathTreeNode { IsDirectory: false } node) return;
+        AudioPath.Text = node.FullPath;
+        await OpenAsync(node.FullPath);
     }
 
     private async void PreviewLoaded(object sender, RoutedEventArgs e)
@@ -161,7 +236,6 @@ public partial class AudioPreview : UserControl
     {
         if (e.Key != Key.Enter) return;
         e.Handled = true;
-        AudioPath.IsDropDownOpen = false;
         await OpenAsync(AudioPath.Text);
     }
 
@@ -176,9 +250,14 @@ public partial class AudioPreview : UserControl
         if (audio is not { } selected) return;
         if (player is not null)
         {
-            player.Play();
-            timer.Start();
-            PauseButton.IsEnabled = true;
+            if (PlayButton.IsPlaying)
+            {
+                player.Pause();
+                timer.Stop();
+                PlayButton.IsPlaying = false;
+                UpdatePosition();
+            }
+            else ResumePlayback();
             return;
         }
         PlayButton.IsEnabled = false;
@@ -218,20 +297,20 @@ public partial class AudioPreview : UserControl
         playerConverted = converted;
         media.Open(new Uri(file, UriKind.Absolute));
         if (!ReferenceEquals(media, player)) return;
-        media.Play();
-        timer.Start();
-        PauseButton.IsEnabled = StopButton.IsEnabled = true;
+        ResumePlayback();
+        StopButton.IsEnabled = true;
     }
 
     private void MediaOpened(object? sender, EventArgs e)
     {
         if (!ReferenceEquals(sender, player)) return;
         Status.Text = playerConverted ? "正在播放 FFmpeg 转码预览（最多 5 分钟）" : "";
-        if (player!.NaturalDuration.HasTimeSpan)
+        if (player!.NaturalDuration.HasTimeSpan && player.NaturalDuration.TimeSpan > TimeSpan.Zero)
         {
-            PositionSlider.Maximum = Math.Max(0.01, player.NaturalDuration.TimeSpan.TotalSeconds);
+            PositionSlider.Maximum = player.NaturalDuration.TimeSpan.TotalSeconds;
             PositionSlider.IsEnabled = true;
         }
+        UpdatePosition();
     }
 
     private async void MediaFailed(object? sender, ExceptionEventArgs e)
@@ -338,12 +417,11 @@ public partial class AudioPreview : UserControl
         if (ReferenceEquals(sender, player)) ResetPosition();
     }
 
-    private void PauseAudio(object sender, RoutedEventArgs e)
+    private void ResumePlayback()
     {
-        player?.Pause();
-        timer.Stop();
-        PauseButton.IsEnabled = false;
-        UpdatePosition();
+        player?.Play();
+        timer.Start();
+        PlayButton.IsPlaying = true;
     }
 
     private void StopAudio(object sender, RoutedEventArgs e) => ResetPosition();
@@ -352,7 +430,7 @@ public partial class AudioPreview : UserControl
     {
         player?.Stop();
         timer.Stop();
-        PauseButton.IsEnabled = false;
+        PlayButton.IsPlaying = false;
         UpdatePosition();
     }
 
@@ -362,6 +440,11 @@ public partial class AudioPreview : UserControl
         updatingControls = true;
         try { PositionSlider.Value = elapsed.TotalSeconds; }
         finally { updatingControls = false; }
+        UpdateTimeLabel(elapsed);
+    }
+
+    private void UpdateTimeLabel(TimeSpan elapsed)
+    {
         TimeLabel.Text = player?.NaturalDuration.HasTimeSpan == true
             ? $"{FormatTime(elapsed)} / {FormatTime(player.NaturalDuration.TimeSpan)}" : FormatTime(elapsed);
     }
@@ -371,7 +454,11 @@ public partial class AudioPreview : UserControl
     private void SeekAudio(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
         if (!updatingControls && PositionSlider.IsEnabled && player is not null)
-            player.Position = TimeSpan.FromSeconds(e.NewValue);
+        {
+            var elapsed = TimeSpan.FromSeconds(e.NewValue);
+            player.Position = elapsed;
+            UpdateTimeLabel(elapsed);
+        }
     }
 
     private void ReleasePlayer()
@@ -388,7 +475,8 @@ public partial class AudioPreview : UserControl
             temporaryFile = null;
             DeleteTemporaryFile(file);
         }
-        PauseButton.IsEnabled = StopButton.IsEnabled = PositionSlider.IsEnabled = false;
+        PlayButton.IsPlaying = false;
+        StopButton.IsEnabled = PositionSlider.IsEnabled = false;
         UpdatePosition();
     }
 

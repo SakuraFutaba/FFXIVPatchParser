@@ -147,11 +147,14 @@ public sealed partial class LocalGameSource : IDisposable
         }
     }
     public IReadOnlyList<string> ListUiTextures(CancellationToken token = default) => EnumerateUiTextures(token).Select(t => t.Path).ToArray();
-    internal IReadOnlyList<UiTextureLocation> EnumerateUiTextures(CancellationToken token)
+    internal IReadOnlyList<UiTextureLocation> EnumerateUiTextures(CancellationToken token, IReadOnlySet<string>? containers = null,
+        Func<string, long, long, bool>? includeRange = null)
     {
         lock (gate)
         {
-            if (uiTextures != null) return uiTextures;
+            if (uiTextures != null) return uiTextures.Where(item =>
+                (containers is null || containers.Contains(item.Container)) &&
+                (includeRange is null || includeRange(item.Container, item.Offset, item.End))).ToArray();
             var knownNames = ListIcons(token).GroupBy(p => GameData.ParseFilePath(p)!.IndexHash).ToDictionary(g => g.Key, g => g.First());
             var result = new List<UiTextureLocation>();
             foreach (var repo in game.Repositories.Values)
@@ -165,6 +168,8 @@ public sealed partial class LocalGameSource : IDisposable
                     foreach (var group in locations.GroupBy(x => x.Key.Item1))
                     {
                         var pack = category.GetDat(group.Key) ?? throw new FileNotFoundException("缺少SqPack容器。");
+                        var container = Path.GetRelativePath(SqPackPath, pack.FullName).Replace('\\', '/');
+                        if (containers is not null && !containers.Contains(container)) continue;
                         using var stream = File.OpenRead(pack.FullName);
                         using var reader = new BinaryReader(stream);
                         var ordered = group.OrderBy(x => x.Key.Item2).ToArray();
@@ -173,17 +178,18 @@ public sealed partial class LocalGameSource : IDisposable
                             token.ThrowIfCancellationRequested();
                             var offset = ordered[i].Key.Item2;
                             if (offset < 0 || offset > stream.Length - 24) throw new InvalidDataException("SqPack索引偏移越界。");
+                            var end = i + 1 < ordered.Length ? ordered[i + 1].Key.Item2 : stream.Length;
+                            if (includeRange is not null && !includeRange(container, offset, end)) continue;
                             stream.Position = offset + 4;
                             if (reader.ReadUInt32() != 4) continue;
-                            var container = Path.GetRelativePath(SqPackPath, pack.FullName).Replace('\\', '/');
                             var path = knownNames.GetValueOrDefault(ordered[i].Value) ?? $"sqpack:{container}@{offset:X}#{ordered[i].Value:X16}";
                             textureAddresses[path] = (pack, offset);
-                            result.Add(new(path, container, offset, i + 1 < ordered.Length ? ordered[i + 1].Key.Item2 : pack.File.Length));
+                            result.Add(new(path, container, offset, end));
                         }
                     }
                 }
             }
-            uiTextures = result;
+            if (containers is null && includeRange is null) uiTextures = result;
             return result;
         }
     }

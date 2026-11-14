@@ -15,18 +15,22 @@ public enum SqPackPage { Tables, Images, Models, Audio, PatchImages, PatchModels
 
 public partial class SqPackBrowser : UserControl
 {
-    private const int RowsPerPage = 100, ColumnsPerPage = 30, IconsPerPage = 24;
+    private const int RowsPerPage = 100, IconsPerPage = 24;
     private static string PathSetting => Path.Combine(Workspace.Temp, "ui", "sqpack-path.txt");
 
     private LocalGameSource? game;
     private CancellationTokenSource? operation;
+    private SqPackPage? workPage;
+    private (string Message, bool Error) connectionStatus;
+    private readonly Dictionary<SqPackPage, (string Message, bool Error)> pageStatuses = new();
     private Task? autoConnectTask, runningWork;
     private string? autoConnectFailure;
     private bool patchWork, initialized, closing;
+    private SqPackPage currentPage = SqPackPage.Tables;
     private string? selectedTable;
     private TablePage? tablePage;
-    private int rowPage, columnPage, editingColumn;
-    private readonly List<int> rowOffsets = [0];
+    private int firstTableOffset, editingColumn;
+    private bool loadingTableRows;
     private readonly Dictionary<int, string> columnFilters = new();
     private SheetCell? selectedCell;
     private IReadOnlyList<string>? texturePaths;
@@ -45,10 +49,13 @@ public partial class SqPackBrowser : UserControl
         InitializeComponent();
         initialized = true;
         ResetPatchMedia();
+        UpdateControls();
+        SetConnectionStatus("请在设置中连接游戏目录。");
     }
 
     public event Action<SqPackPage>? PageRequested;
-    public event Action? SettingsRequested;
+    public event Action? MediaControlsChanged;
+    public event Action? GameVersionChanged;
 
     public static string? RememberedGamePath()
     {
@@ -58,12 +65,14 @@ public partial class SqPackBrowser : UserControl
     }
 
     public string? ConnectedGamePath => game?.SqPackPath;
-    public string ConnectionStatus => BrowserStatus.Text;
-    public bool HasConnectionError => BrowserStatus.Foreground == Brushes.Firebrick;
+    public string GameVersionLabel { get; private set; } = "未连接";
+    public string ConnectionStatus => connectionStatus.Message;
+    public bool HasConnectionError => connectionStatus.Error;
 
     public void ShowPage(SqPackPage page)
     {
         CloseTablePopups();
+        currentPage = page;
         TablesPanel.Visibility = Visible(SqPackPage.Tables);
         LocalImagesPanel.Visibility = Visible(SqPackPage.Images);
         LocalModelsPanel.Visibility = Visible(SqPackPage.Models);
@@ -71,6 +80,8 @@ public partial class SqPackBrowser : UserControl
         PatchImagesPanel.Visibility = Visible(SqPackPage.PatchImages);
         PatchModelsPanel.Visibility = Visible(SqPackPage.PatchModels);
         PatchAudioPanel.Visibility = Visible(SqPackPage.PatchAudio);
+        DisplayBrowserStatus();
+        MediaControlsChanged?.Invoke();
 
         Visibility Visible(SqPackPage target) => page == target ? Visibility.Visible : Visibility.Collapsed;
     }
@@ -78,10 +89,15 @@ public partial class SqPackBrowser : UserControl
     public void SetPatch(LoadedPatch? loaded, string[] archivePaths)
     {
         if (patchWork) operation?.Cancel();
+        patchCatalogueCancellation?.Cancel();
         patch = loaded;
         patchArchives = archivePaths.ToArray();
+        pageStatuses.Remove(SqPackPage.PatchImages);
+        pageStatuses.Remove(SqPackPage.PatchModels);
+        pageStatuses.Remove(SqPackPage.PatchAudio);
         ResetPatchImages();
         ResetPatchMedia();
+        StartPatchCatalogue();
     }
 
     private async void BrowserLoaded(object sender, RoutedEventArgs e)
@@ -96,7 +112,7 @@ public partial class SqPackBrowser : UserControl
             window.LocationChanged += (_, _) => CloseTableCell();
             window.SizeChanged += (_, _) => CloseTableCell();
         }
-        if (IsVisible) await AutoConnect();
+        await AutoConnect();
     }
 
     private async void BrowserVisibilityChanged(object sender, DependencyPropertyChangedEventArgs e)
@@ -128,14 +144,14 @@ public partial class SqPackBrowser : UserControl
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             autoConnectFailure = "读取上次目录失败：" + ex.Message;
-            SetStatus(autoConnectFailure, true);
+            SetConnectionStatus(autoConnectFailure, true);
             return;
         }
         if (runningWork is { } pending) await pending;
         if (!string.IsNullOrWhiteSpace(path) && game == null && !closing)
         {
             await ConnectGame(path, remember: false);
-            if (game == null) autoConnectFailure = BrowserStatus.Text;
+            if (game == null) autoConnectFailure = ConnectionStatus;
         }
     }
 
@@ -153,10 +169,12 @@ public partial class SqPackBrowser : UserControl
     {
         closing = true;
         operation?.Cancel();
+        patchCatalogueCancellation?.Cancel();
         imageCatalogCancellation?.Cancel();
         textureSearchCancellation?.Cancel();
         await StopTablePresentation();
         await StopThumbnails();
+        await patchCatalogueTask;
         if (operation == null) DisposeGame();
     }
 
@@ -168,8 +186,6 @@ public partial class SqPackBrowser : UserControl
         source?.Dispose();
     }
 
-    private void OpenPathSettings(object sender, RoutedEventArgs e) => SettingsRequested?.Invoke();
-
     public async Task ConnectGame(string path, bool remember = true)
     {
         if (runningWork is { } pending) await pending;
@@ -179,6 +195,8 @@ public partial class SqPackBrowser : UserControl
             await StopTablePresentation();
             await StopThumbnails();
             var source = await Task.Run(() => new LocalGameSource(path), token);
+            patchCatalogueCancellation?.Cancel();
+            await patchCatalogueTask;
             if (token.IsCancellationRequested)
             {
                 source.Dispose();
@@ -186,11 +204,12 @@ public partial class SqPackBrowser : UserControl
             }
             DisposeGame();
             game = source;
+            pageStatuses.Clear();
             SetMediaSource(source);
             tableIconCache.Clear();
             ResetTableRelations();
-            GamePathLabel.Text = GetGameLabel(source.SqPackPath);
-            GamePathLabel.ToolTip = source.SqPackPath;
+            GameVersionLabel = GetGameVersionLabel(source);
+            GameVersionChanged?.Invoke();
             selectedTable = null;
             ResetTable();
             ApplyTableSearch();
@@ -207,7 +226,8 @@ public partial class SqPackBrowser : UserControl
                 catch (UnauthorizedAccessException ex) { return "已连接；保存目录失败：" + ex.Message; }
             }
             return $"已连接 SqPack · {source.SheetNames.Count:N0} 张表";
-        });
+        }, connectionWork: true);
+        StartPatchCatalogue();
     }
 
     private static async Task SavePath(string sqPackPath, CancellationToken token)
@@ -224,56 +244,56 @@ public partial class SqPackBrowser : UserControl
         finally { File.Delete(partial); }
     }
 
-    private static string GetGameLabel(string sqPackPath)
+    private static string GetGameVersionLabel(LocalGameSource source)
     {
-        var parent = Directory.GetParent(sqPackPath);
-        if (parent == null) return "SqPack 已连接";
         try
         {
-            var versionFile = Path.Combine(parent.FullName, "ffxivgame.ver");
-            if (File.Exists(versionFile))
-                return "游戏版本 " + File.ReadAllText(versionFile).Trim();
+            if (source.GameVersion is { Length: > 0 } version) return version;
         }
         catch (IOException) { }
         catch (UnauthorizedAccessException) { }
-        return $"{parent.Name} / {Path.GetFileName(sqPackPath)}";
+        return "版本未知";
     }
 
-    private Task Work(string message, Func<CancellationToken, Task<string>> action, bool forPatch = false)
+    private Task Work(string message, Func<CancellationToken, Task<string>> action, bool forPatch = false, bool connectionWork = false)
     {
         if (operation != null || closing) return Task.CompletedTask;
-        return runningWork = RunWork(message, action, forPatch);
+        return runningWork = RunWork(message, action, forPatch, connectionWork ? null : currentPage);
     }
 
-    private async Task RunWork(string message, Func<CancellationToken, Task<string>> action, bool forPatch)
+    private async Task RunWork(string message, Func<CancellationToken, Task<string>> action, bool forPatch, SqPackPage? page)
     {
         using var current = new CancellationTokenSource();
         operation = current;
+        workPage = page;
         patchWork = forPatch;
         CloseTablePopups();
         UpdateControls();
-        SetStatus(message);
+        SetWorkStatus(page, message);
         try
         {
             var result = await action(current.Token);
             current.Token.ThrowIfCancellationRequested();
-            SetStatus(result);
+            SetWorkStatus(page, result);
         }
-        catch (OperationCanceledException) { if (!closing) SetStatus("已取消读取"); }
-        catch (Exception ex) { if (!closing) SetStatus("读取失败：" + ex.Message, true); }
+        catch (OperationCanceledException) { if (!closing) SetWorkStatus(page, "已取消"); }
+        catch (Exception ex) { if (!closing) SetWorkStatus(page, "读取失败：" + ex.Message, true); }
         finally
         {
             operation = null;
+            workPage = null;
             patchWork = false;
             if (closing)
             {
                 await StopTablePresentation();
                 await StopThumbnails();
+                await patchCatalogueTask;
                 DisposeGame();
             }
             else
             {
                 UpdateControls();
+                StartPatchCatalogue();
             }
         }
     }
@@ -285,17 +305,39 @@ public partial class SqPackBrowser : UserControl
         LocalImagesPanel.IsEnabled = idle && game != null;
         LocalModelsPanel.IsEnabled = idle && game != null;
         LocalAudioPanel.IsEnabled = idle && game != null;
-        PatchImagesPanel.IsEnabled = idle;
-        var canScan = idle && game != null && patch != null && patchArchives.Length > 0;
-        ScanPatchButton.IsEnabled = ScanPatchModelsButton.IsEnabled = ScanPatchAudioButton.IsEnabled = canScan;
-        PatchModelContainer.IsEnabled = PatchAudioContainer.IsEnabled = canScan;
-        CancelBrowserButton.Visibility = BrowserProgress.Visibility = idle ? Visibility.Collapsed : Visibility.Visible;
+        PatchImagesPanel.IsEnabled = PatchModelsPanel.IsEnabled = PatchAudioPanel.IsEnabled = idle;
+        DisplayBrowserStatus();
+        MediaControlsChanged?.Invoke();
     }
 
-    private void SetStatus(string message, bool error = false)
+    private IProgress<string> WorkProgress(CancellationToken token)
     {
+        var page = workPage;
+        return new Progress<string>(message =>
+        {
+            if (operation?.Token == token && !token.IsCancellationRequested) SetWorkStatus(page, message);
+        });
+    }
+
+    private void SetWorkStatus(SqPackPage? page, string message, bool error = false)
+    {
+        if (page is { } selected) pageStatuses[selected] = (message, error);
+        else connectionStatus = (message, error);
+        DisplayBrowserStatus();
+    }
+
+    private void SetStatus(string message, bool error = false) => SetWorkStatus(currentPage, message, error);
+    private void SetConnectionStatus(string message, bool error = false) => SetWorkStatus(null, message, error);
+
+    private void DisplayBrowserStatus()
+    {
+        var busy = operation != null && (workPage == null || workPage == currentPage);
+        var fallback = game == null || (busy && workPage == null) ? connectionStatus : ("", false);
+        var (message, error) = busy && workPage == null ? fallback : pageStatuses.GetValueOrDefault(currentPage, fallback);
         BrowserStatus.Text = message;
         BrowserStatus.Foreground = error ? Brushes.Firebrick : (Brush)FindResource("Muted");
+        CancelBrowserButton.Visibility = BrowserProgress.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
+        BrowserStatusBar.Visibility = busy || !string.IsNullOrEmpty(message) ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private void CancelBrowser(object sender, RoutedEventArgs e) => operation?.Cancel();
@@ -318,13 +360,12 @@ public partial class SqPackBrowser : UserControl
         if (e.NewValue is not PathTreeNode { Payload: string name } || name == selectedTable) return;
         selectedTable = name;
         ResetTable();
-        await ReadRows(0, 0);
+        await ReadRows();
     }
 
     private void ResetTable()
     {
         columnFilters.Clear();
-        columnPage = 0;
         ResetRows();
     }
 
@@ -334,13 +375,11 @@ public partial class SqPackBrowser : UserControl
         pendingTableView = null;
         CloseTablePopups();
         tablePage = null;
-        rowOffsets.Clear();
-        rowOffsets.Add(0);
-        rowPage = 0;
+        firstTableOffset = 0;
         RenderTable();
     }
 
-    private async Task ReadRows(int pageIndex, int offset)
+    private async Task ReadRows()
     {
         if (game is not { } source || selectedTable is not { } name) return;
         var filters = columnFilters.ToArray();
@@ -348,10 +387,9 @@ public partial class SqPackBrowser : UserControl
         {
             tablePresentationCancellation?.Cancel();
             pendingTableView = null;
-            var result = await ReadTablePage(source, name, offset, filters, token);
+            var result = await ReadTablePage(source, name, 0, filters, token);
             token.ThrowIfCancellationRequested();
-            if (pageIndex == rowOffsets.Count) rowOffsets.Add(offset);
-            rowPage = pageIndex;
+            firstTableOffset = 0;
             tablePage = result;
             RenderTable();
             QueueTablePresentation();
@@ -372,6 +410,7 @@ public partial class SqPackBrowser : UserControl
 
     private void RenderTable(bool scrollToFirst = true)
     {
+        var restore = TableColumnSizing.Capture(TableGrid, !scrollToFirst);
         tableIconCancellation?.Cancel();
         CloseTableCell();
         TableGrid.ItemsSource = null;
@@ -380,22 +419,13 @@ public partial class SqPackBrowser : UserControl
         ReloadRowsButton.IsEnabled = selectedTable != null;
         FitTableColumnsButton.IsEnabled = tablePage?.Rows.Count > 0;
         ClearTableFiltersButton.IsEnabled = columnFilters.Count != 0;
-        PreviousRowsButton.IsEnabled = tablePage != null && rowPage > 0;
-        NextRowsButton.IsEnabled = tablePage?.NextOffset != null;
-        PreviousColumnsButton.IsEnabled = tablePage != null && columnPage > 0;
-        NextColumnsButton.IsEnabled = tablePage != null && (columnPage + 1) * ColumnsPerPage < tablePage.Columns.Count;
-        RowPageLabel.Text = ColumnPageLabel.Text = "";
         TableInfo.Text = selectedTable ?? "选择一张表查看完整内容";
         if (tablePage is not { } page) return;
         var language = page.Language == "ChineseSimplified" ? "简体中文" : "无语言";
         TableInfo.Text = $"{selectedTable} · {language} · {(showRelations ? "关联" : "Raw")}" +
             (columnFilters.Count == 0 ? "" : $" · {columnFilters.Count} 个筛选");
-        RowPageLabel.Text = $"第 {rowPage + 1:N0} 页 · {page.Rows.Count:N0} 行";
-        var start = columnPage * ColumnsPerPage;
-        var end = Math.Min(start + ColumnsPerPage, page.Columns.Count);
-        ColumnPageLabel.Text = page.Columns.Count == 0 ? "0 列" : $"{start + 1:N0}–{end:N0} / {page.Columns.Count:N0} 列";
         AddTableColumn(-1, "Row ID", "行号或 行号.子行号", "Key");
-        for (var i = start; i < end; i++)
+        for (var i = 0; i < page.Columns.Count; i++)
         {
             var column = page.Columns[i];
             var rawName = page.Raw.Columns[i].Name;
@@ -409,6 +439,7 @@ public partial class SqPackBrowser : UserControl
         TableGrid.FrozenColumnCount = 1;
         TableGrid.ItemsSource = page.Rows;
         ApplyTableColumnSizing(page);
+        restore();
         if (scrollToFirst && page.Rows.Count > 0) TableGrid.ScrollIntoView(page.Rows[0]);
         QueueTableIconPreviews();
     }
@@ -434,14 +465,42 @@ public partial class SqPackBrowser : UserControl
         TableGrid.Columns.Add(column);
     }
 
-    private async void ReloadRows(object sender, RoutedEventArgs e) => await ReadRows(rowPage, rowOffsets[rowPage]);
-    private async void PreviousRows(object sender, RoutedEventArgs e) => await ReadRows(rowPage - 1, rowOffsets[rowPage - 1]);
-    private async void NextRows(object sender, RoutedEventArgs e)
+    private async void ReloadRows(object sender, RoutedEventArgs e)
     {
-        if (tablePage?.NextOffset is { } offset) await ReadRows(rowPage + 1, offset);
+        ResetRows();
+        await ReadRows();
     }
-    private void PreviousColumns(object sender, RoutedEventArgs e) { columnPage--; RenderTable(); }
-    private void NextColumns(object sender, RoutedEventArgs e) { columnPage++; RenderTable(); }
+
+    private async Task LoadMoreTableRows(bool prepend = false)
+    {
+        if (loadingTableRows || operation != null || tablePage is not { } previous
+            || game is not { } source || selectedTable is not { } name) return;
+        if (prepend ? firstTableOffset == 0 : previous.NextOffset == null) return;
+        var offset = prepend ? Math.Max(0, firstTableOffset - RowsPerPage) : previous.NextOffset!.Value;
+        loadingTableRows = true;
+        try
+        {
+            var filters = columnFilters.ToArray();
+            await Work($"正在读取 {name}…", async token =>
+            {
+                var next = await ReadTablePage(source, name, offset, filters, token);
+                token.ThrowIfCancellationRequested();
+                if (tablePage?.Raw != previous.Raw || selectedTable != name) return "";
+                tablePresentationCancellation?.Cancel();
+                pendingTableView = null;
+                var rawRows = (prepend ? next.Raw.Rows.Concat(previous.Raw.Rows) : previous.Raw.Rows.Concat(next.Raw.Rows))
+                    .ToDictionary(pair => pair.Key, pair => pair.Value);
+                tablePage = previous with { Rows = (prepend ? next.Rows.Concat(previous.Rows) : previous.Rows.Concat(next.Rows)).ToArray(),
+                    NextOffset = prepend ? previous.NextOffset : next.NextOffset, Raw = new SheetData(previous.Raw.Columns, rawRows) };
+                if (prepend) firstTableOffset = offset;
+                RenderTable(scrollToFirst: false);
+                if (prepend) TableColumnSizing.ShiftRows(TableGrid, next.Rows.Count);
+                QueueTablePresentation();
+                return $"已加载 {name} · {tablePage.Rows.Count:N0} 行";
+            });
+        }
+        finally { loadingTableRows = false; }
+    }
 
     private void OpenTableFilter(int index, string name, Button anchor)
     {
@@ -468,7 +527,7 @@ public partial class SqPackBrowser : UserControl
     {
         columnFilters.Clear();
         ResetRows();
-        await ReadRows(0, 0);
+        await ReadRows();
     }
 
     private async Task SetTableFilter(string text)
@@ -477,7 +536,7 @@ public partial class SqPackBrowser : UserControl
         if (term.Length == 0) columnFilters.Remove(editingColumn);
         else columnFilters[editingColumn] = term;
         ResetRows();
-        await ReadRows(0, 0);
+        await ReadRows();
     }
 
     private async void TableCellClicked(object sender, MouseButtonEventArgs e)
@@ -515,7 +574,7 @@ public partial class SqPackBrowser : UserControl
         }
         CloseTableCell();
         if (cell.DataContext is not TableRow row || tablePage is not { } page) return;
-        var index = cell.Column.DisplayIndex == 0 ? -1 : columnPage * ColumnsPerPage + cell.Column.DisplayIndex - 1;
+        var index = cell.Column.DisplayIndex == 0 ? -1 : cell.Column.DisplayIndex - 1;
         selectedCell = index < 0 ? new SheetCell(row.Key, row.Key) : row.Cells[index];
         CellTitle.Text = index < 0 ? "Row ID" : $"{page.Columns[index].Name} · Row {row.Key}";
         RawCellToggle.Visibility = selectedCell.Display == selectedCell.Canonical ? Visibility.Collapsed : Visibility.Visible;
@@ -550,9 +609,12 @@ public partial class SqPackBrowser : UserControl
         CloseTableCell();
     }
 
-    private void TableGridScrolled(object sender, ScrollChangedEventArgs e)
+    private async void TableGridScrolled(object sender, ScrollChangedEventArgs e)
     {
         if (e.HorizontalChange != 0 || e.VerticalChange != 0) CloseTableCell();
+        if (e.VerticalChange > 0 && e.VerticalOffset + e.ViewportHeight >= e.ExtentHeight - 10)
+            await LoadMoreTableRows();
+        else if (e.VerticalChange < 0 && e.VerticalOffset <= 10) await LoadMoreTableRows(prepend: true);
     }
 
     private void TableGridLostMouseCapture(object sender, MouseEventArgs e)
@@ -582,7 +644,7 @@ public partial class SqPackBrowser : UserControl
         StartImageCatalogIfVisible();
     }
 
-    private async void ScanIcons(object sender, RoutedEventArgs e)
+    private async Task ScanIcons()
     {
         if (game is not { } source) return;
         imageCatalogCancellation?.Cancel();
@@ -799,9 +861,7 @@ public partial class SqPackBrowser : UserControl
     private void ResetPatchImages()
     {
         patchImages = [];
-        PatchName.Text = patch?.Name ?? "请先在补丁工作区打开补丁 ZIP。";
-        PatchName.ToolTip = patch?.Name;
-        PatchSummary.Text = patch == null ? "" : "使用补丁目标版本的本地 SqPack 定位写入纹理候选。";
+        PatchSummary.Text = PatchCatalogueMessage;
         PatchImageSearch.Clear();
         ApplyPatchImageFilter();
         PatchImageCount.Text = "";
@@ -810,23 +870,26 @@ public partial class SqPackBrowser : UserControl
         UpdateControls();
     }
 
-    private async void ScanPatch(object sender, RoutedEventArgs e)
+    private async Task ScanPatchImages()
     {
         if (game is not { } source || patch is not { } loaded) return;
         var archives = patchArchives;
-        await Work("正在验证补丁和本地目标版本…", async token =>
+        await Work("准备完整扫描…", async token =>
         {
-            var progress = new Progress<string>(message =>
-            {
-                if (!token.IsCancellationRequested) SetStatus(message);
-            });
+            await patchCatalogueTask.WaitAsync(token);
+            var progress = WorkProgress(token);
             var result = await Task.Run(() => PatchImageScanner.Scan(source, loaded, archives, token, progress), token);
             token.ThrowIfCancellationRequested();
-            patchImages = result.Images;
-            PatchSummary.Text = result.Summary;
-            ApplyPatchImageFilter();
-            return $"已分析补丁 · {result.Images.Count:N0} 张写入纹理候选";
+            ShowPatchImages(result);
+            return "";
         }, forPatch: true);
+    }
+
+    private void ShowPatchImages(PatchImageScanResult result)
+    {
+        patchImages = result.Images;
+        PatchSummary.Text = result.Summary;
+        ApplyPatchImageFilter();
     }
 
     private void FilterPatchImages(object sender, TextChangedEventArgs e)
@@ -850,7 +913,7 @@ public partial class SqPackBrowser : UserControl
             PatchImagePath.Text = entry.Path;
             var bitmap = await Task.Run(() => CreateBitmap(source.ReadTexture(entry.Path)), token);
             token.ThrowIfCancellationRequested();
-            PatchTexturePreview.SetImage(bitmap, entry.Path, "本地目标图像 · 写入候选");
+            PatchTexturePreview.SetImage(bitmap, entry.Path, "本地 SqPack · 写入候选");
             return "已读取补丁目标纹理";
         }, forPatch: true);
     }

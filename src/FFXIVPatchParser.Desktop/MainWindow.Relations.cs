@@ -74,7 +74,7 @@ public partial class MainWindow
         var capturedDiff = diff;
         var sheet = relationSheet;
         var related = DiffLinked.IsChecked == true;
-        var keys = filteredRows.Skip(rowPage * RowsPerPage).Take(RowsPerPage).Select(row => row.Key).ToArray();
+        var keys = filteredRows.Take(loadedDiffRows).Select(row => row.Key).ToArray();
         var oldResolver = beforeRelations; var newResolver = afterRelations;
         SheetData? Page(SheetData? source)
         {
@@ -89,7 +89,7 @@ public partial class MainWindow
         {
             if (related)
             {
-                SetStatus("正在解析当前页的表格关联…");
+                SetStatus("正在解析已加载行的表格关联…");
                 using var download = CancellationTokenSource.CreateLinkedTokenSource(pending.Token);
                 download.CancelAfter(TimeSpan.FromSeconds(8));
                 try { await SqPackView.Definitions.DownloadAsync([sheet], download.Token); }

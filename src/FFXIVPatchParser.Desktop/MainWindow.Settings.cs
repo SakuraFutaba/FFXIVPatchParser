@@ -1,4 +1,5 @@
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using Microsoft.Win32;
 
@@ -27,6 +28,58 @@ public partial class MainWindow
         try { GameDirectorySetting.Text = SqPackView.ConnectedGamePath ?? SqPackBrowser.RememberedGamePath() ?? ""; }
         catch (IOException ex) { SetStatus("无法读取游戏路径：" + ex.Message, true); }
         catch (UnauthorizedAccessException ex) { SetStatus("无法读取游戏路径：" + ex.Message, true); }
+        try
+        {
+            GodbertLibrarySetting.Text = GodbertAnimationSettings.ReadDirectory() is { } directory
+                ? Path.Combine(directory, GodbertAnimationSettings.LibraryName) : "";
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            SetGodbertStatus("无法读取动作解码配置：" + ex.Message, true);
+        }
+    }
+
+    private void ChooseGodbertLibrary(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            var dialog = new OpenFileDialog
+            {
+                Title = "选择 Godbert 动作解码库",
+                Filter = "Godbert 动作解码库 (hkAnimationInterop.dll)|hkAnimationInterop.dll",
+                CheckFileExists = true,
+                Multiselect = false
+            };
+            if (GodbertAnimationSettings.ReadDirectory() is { } directory) dialog.InitialDirectory = directory;
+            if (dialog.ShowDialog(this) == true) SaveGodbertLibraryPath(dialog.FileName);
+        }
+        catch (Exception ex) when (ex is ExternalException or IOException or UnauthorizedAccessException or InvalidOperationException or ArgumentException)
+        {
+            SetGodbertStatus("无法打开文件选择器。可直接粘贴路径后保存。" + ex.Message, true);
+        }
+    }
+
+    private void SaveGodbertLibrary(object sender, RoutedEventArgs e) => SaveGodbertLibraryPath(GodbertLibrarySetting.Text);
+
+    private void SaveGodbertLibraryPath(string input)
+    {
+        try
+        {
+            GodbertAnimationSettings.SaveLibraryPath(input);
+            var directory = GodbertAnimationSettings.ReadDirectory();
+            GodbertLibrarySetting.Text = directory == null ? "" : Path.Combine(directory, GodbertAnimationSettings.LibraryName);
+            SetGodbertStatus(directory == null ? "已移除动作解码配置。" : "已保存动作解码库。");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException or BadImageFormatException or InvalidDataException)
+        {
+            SetGodbertStatus("无法保存动作解码库：" + ex.Message, true);
+        }
+    }
+
+    private void SetGodbertStatus(string text, bool error = false)
+    {
+        GodbertLibraryStatus.Text = text;
+        GodbertLibraryStatus.Foreground = Brush(error ? "#CF222E" : "#667085");
     }
 
     private async void ChooseGameDirectory(object sender, RoutedEventArgs e)

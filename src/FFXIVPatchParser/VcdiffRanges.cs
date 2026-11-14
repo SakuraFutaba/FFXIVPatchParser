@@ -48,7 +48,7 @@ internal static class VcdiffRanges
             length -= count;
         }
     }
-    internal static IReadOnlyList<Range> Read(Stream stream, CancellationToken token, long? expectedTargetLength = null)
+    internal static IReadOnlyList<Range> Read(Stream stream, CancellationToken token, long? expectedTargetLength = null, int maxInstructionBytes = 256 * 1024 * 1024)
     {
         using var reader = new BinaryReader(stream, System.Text.Encoding.UTF8, true);
         if (!reader.ReadBytes(4).SequenceEqual(new byte[] { 0xd6, 0xc3, 0xc4, 0 })) throw new InvalidDataException("不支持的 VCDIFF 头。");
@@ -90,6 +90,7 @@ internal static class VcdiffRanges
             if (dataLength > sectionLength || instructionsLength > sectionLength - dataLength
                 || addressesLength != sectionLength - dataLength - instructionsLength)
                 throw new InvalidDataException("VCDIFF 节长度异常。");
+            if (instructionsLength + addressesLength > maxInstructionBytes) throw new NotSupportedException("VCDIFF 指令及地址节超出内存分析限制；仍可查看原始差分。");
             Discard(stream, checksumBytes, token);
             Discard(stream, (int)dataLength, token);
             using var instructions = new MemoryStream(reader.ReadBytes((int)instructionsLength));
@@ -134,6 +135,7 @@ internal static class VcdiffRanges
                     var start = targetBase + position; var end = start + size;
                     if (ranges.Count > 0 && ranges[^1].End == start) ranges[^1] = new(ranges[^1].Start, end); else ranges.Add(new(start, end));
                 }
+                if (ranges.Count > 1_000_000) throw new NotSupportedException("VCDIFF 写入区间过多。");
                 position += size;
             }
             while (instructions.Position < instructions.Length) { token.ThrowIfCancellationRequested(); var code = Codes[instructions.ReadByte()]; Execute(code.A, false); Execute(code.B, true); }

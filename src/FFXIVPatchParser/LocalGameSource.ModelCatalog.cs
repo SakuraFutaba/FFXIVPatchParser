@@ -97,12 +97,13 @@ public sealed partial class LocalGameSource
     }
 
     // 索引不保存原始路径。只收录当前安装版本中存在的候选路径。
-    private Dictionary<ulong, string> BuildKnownModelNames(CancellationToken token)
+    private Dictionary<ulong, string> BuildKnownModelNames(CancellationToken token, HashSet<ulong>? targetHashes = null)
     {
         var names = new Dictionary<ulong, string>();
         var hashes = game.Repositories.Values.SelectMany(r => r.Categories)
             .Where(pair => pair.Key == 4).SelectMany(pair => pair.Value)
             .SelectMany(category => category.IndexHashTableEntries?.Keys.AsEnumerable() ?? []).ToHashSet();
+        if (targetHashes is not null) hashes.IntersectWith(targetHashes);
         var folders = hashes.Select(hash => hash >> 32).ToHashSet();
         void AddIfPresent(string path)
         {
@@ -131,6 +132,16 @@ public sealed partial class LocalGameSource
         }
         catch (Exception ex) when (ex is IOException or NotSupportedException) { }
 
+        var equipmentFolders = new List<(string Model, string Folder)>();
+        for (var number = 1; number <= 9999; number++)
+        {
+            token.ThrowIfCancellationRequested();
+            var model = $"e{number:D4}";
+            var folder = $"chara/equipment/{model}/model";
+            if (folders.Contains(GameData.ParseFilePath(folder + "/probe.mdl")!.IndexHash >> 32))
+                equipmentFolders.Add((model, folder));
+        }
+
         for (var race = 1; race <= 18; race++)
         {
             var character = $"c{race * 100 + 1:D4}";
@@ -142,14 +153,11 @@ public sealed partial class LocalGameSource
                 AddIfPresent($"chara/human/{character}/obj/{part}/{model}/model/{character}{model}_{suffix}.mdl");
             }
 
-            for (var number = 1; number <= 9999; number++)
+            foreach (var (model, folder) in equipmentFolders)
             {
                 token.ThrowIfCancellationRequested();
-                var model = $"e{number:D4}";
-                var folder = $"chara/equipment/{model}/model";
-                if (!folders.Contains(GameData.ParseFilePath(folder + "/probe.mdl")!.IndexHash >> 32)) continue;
                 foreach (var slot in EquipmentSlots)
-                    AddIfPresent($"chara/equipment/{model}/model/{character}{model}_{slot}.mdl");
+                    AddIfPresent($"{folder}/{character}{model}_{slot}.mdl");
             }
         }
         return names;

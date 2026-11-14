@@ -74,6 +74,11 @@ public sealed partial class LocalGameSource
             token.ThrowIfCancellationRequested();
             data = (game.GetFile(path) ?? throw new FileNotFoundException("未找到动作资源：" + path)).Data;
         }
+        return ParseAnimationMetadata(data, path, token);
+    }
+
+    private static GameAnimationMetadata ParseAnimationMetadata(byte[] data, string path, CancellationToken token)
+    {
         if (data.Length < 26 || BinaryPrimitives.ReadUInt32LittleEndian(data) != 0x20706170)
             throw new InvalidDataException("不是有效的 PAP 动作资源。");
         var count = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(8));

@@ -5,10 +5,24 @@
   <Border Background="#101C2E">
     <DockPanel>
       <StackPanel DockPanel.Dock="Top" Margin="18,16,12,16"><TextBlock Text="XIV" Foreground="#87B5FF" FontSize="22" FontWeight="Bold"/><TextBlock Text="PATCH PARSER" Foreground="White" FontSize="12" FontWeight="SemiBold" Margin="0,4,0,0"/><TextBlock Text="补丁与数据差异工作台" Foreground="#8193AD" FontSize="11" Margin="0,12,0,0"/></StackPanel>
-      <StackPanel DockPanel.Dock="Bottom" Margin="18,0,12,16"><TextBlock Text="●  本地工作空间" Foreground="#79D6AE" FontSize="12"/><TextBlock Text="CHS · Raw Excel" Foreground="#8193AD" FontSize="11" Margin="0,9,0,0"/></StackPanel>
+      <Border DockPanel.Dock="Bottom" BorderBrush="#27384F" BorderThickness="0,1,0,0" Margin="16,10,12,14" Padding="2,10,0,0">
+        <StackPanel>
+          <TextBlock Text="SqPack 游戏版本" Foreground="#9AAFCB" FontSize="11"/>
+          <TextBlock x:Name="SqPackVersion" Text="未连接" Foreground="#EDF4FF" FontSize="11" TextTrimming="CharacterEllipsis"
+                     ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" Margin="0,3,0,0"/>
+          <TextBlock Text="Diff 补丁版本" Foreground="#9AAFCB" FontSize="11" Margin="0,10,0,0"/>
+          <TextBlock x:Name="DiffVersion" Text="未选择" Foreground="#EDF4FF" FontSize="11" TextWrapping="Wrap" Margin="0,3,0,0"/>
+          <TextBlock x:Name="DiffGameVersions" Foreground="#9AAFCB" FontSize="11" Margin="0,3,0,0" Visibility="Collapsed"/>
+        </StackPanel>
+      </Border>
       <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel>
-          <RadioButton x:Name="PatchNav" GroupName="Nav" Style="{StaticResource Nav}" Content="补丁工作区" IsChecked="True" Checked="Navigate"/>
+          <Expander x:Name="PatchNavigation" Header="补丁工作区" Style="{StaticResource NavigationGroup}" IsExpanded="True">
+            <StackPanel>
+              <RadioButton x:Name="PatchNav" GroupName="Nav" Style="{StaticResource NavChild}" Content="容器级清单" IsChecked="True" Checked="Navigate"/>
+              <RadioButton x:Name="CatalogNav" GroupName="Nav" Style="{StaticResource NavChild}" Content="补丁目录" Checked="Navigate"/>
+            </StackPanel>
+          </Expander>
           <Expander x:Name="DiffNavigation" Header="Diff" Style="{StaticResource NavigationGroup}" IsExpanded="True">
             <StackPanel>
               <RadioButton x:Name="DiffNav" GroupName="Nav" Style="{StaticResource NavChild}" Content="表格" Checked="Navigate"/>
@@ -17,7 +31,7 @@
               <RadioButton x:Name="PatchAudioNav" GroupName="Nav" Style="{StaticResource NavChild}" Content="音频" Checked="Navigate"/>
             </StackPanel>
           </Expander>
-          <Expander x:Name="LocalNavigation" Header="本地 SqPack" Style="{StaticResource NavigationGroup}" IsExpanded="True">
+          <Expander x:Name="LocalNavigation" Header="SqPack" Style="{StaticResource NavigationGroup}" IsExpanded="True">
             <StackPanel>
               <RadioButton x:Name="SqPackNav" GroupName="Nav" Style="{StaticResource NavChild}" Content="表格" Checked="Navigate"/>
               <RadioButton x:Name="LocalImagesNav" GroupName="Nav" Style="{StaticResource NavChild}" Content="图片" Checked="Navigate"/>
@@ -33,24 +47,73 @@
   <Grid Grid.Column="1" Margin="16,12,16,8">
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <DockPanel Margin="0,0,0,10">
-      <TextBlock x:Name="PageTitle" Text="补丁工作区" FontSize="19" FontWeight="SemiBold"/>
-      <Border HorizontalAlignment="Right" VerticalAlignment="Top" Background="#EAF1FF" CornerRadius="12" Padding="12,5"><TextBlock Text="READ ONLY · 游戏文件只读" Foreground="#3869AE" FontSize="11"/></Border>
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+        <Button x:Name="ScanMediaButton" Click="ScanCurrentMedia" Width="112" Margin="0"
+                Style="{StaticResource Primary}" IsEnabled="False" Visibility="Collapsed"/>
+      </StackPanel>
+      <TextBlock x:Name="PageTitle" Text="容器级清单" FontSize="19" FontWeight="SemiBold" VerticalAlignment="Center"/>
     </DockPanel>
-    <Grid Grid.Row="1" x:Name="PatchWorkspace">
-      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-      <Border Background="White" BorderBrush="#E4E7EC" BorderThickness="1" CornerRadius="9" Padding="12" Margin="0,0,0,10">
-        <DockPanel><StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center"><Button x:Name="OpenPatchButton" Content="选择补丁 ZIP…" Style="{StaticResource Primary}" Click="OpenPatch"/><Button Content="查看表格 Diff" Click="ShowDiff"/><Button Content="查看图片 Diff" Click="ShowPatchImages" Margin="0"/></StackPanel>
-        <StackPanel><TextBlock Text="当前补丁" FontSize="11" Foreground="{StaticResource Muted}"/><TextBlock x:Name="PatchTitle" Text="尚未选择补丁" FontSize="18" FontWeight="SemiBold" Margin="0,8,16,0" TextTrimming="CharacterEllipsis"/><TextBlock x:Name="PatchInfo" Text="支持选择同一更新的多个 ZIP 分卷。" Foreground="{StaticResource Muted}" Margin="0,8,0,0"/></StackPanel></DockPanel>
-      </Border>
-      <TabControl Grid.Row="1" Background="White" BorderBrush="#E4E7EC" Padding="0">
-        <TabItem Header="补丁目录" Padding="16,7">
+    <Grid Grid.Row="1" x:Name="PatchWorkspace" UseLayoutRounding="True">
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition Width="295" MinWidth="200" MaxWidth="480"/>
+        <ColumnDefinition Width="8"/>
+        <ColumnDefinition Width="*" MinWidth="570"/>
+      </Grid.ColumnDefinitions>
+      <TreeView x:Name="ResourcesTree" Style="{StaticResource CompactPathTree}" SelectedItemChanged="ResourceSelected">
+        <TreeView.ItemTemplate>
+          <HierarchicalDataTemplate ItemsSource="{Binding Children}">
+            <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" ToolTipService.ShowDuration="20000">
+              <TextBlock.ToolTip>
+                <StackPanel MaxWidth="480">
+                  <TextBlock Text="{Binding FullPath}" FontWeight="SemiBold" TextWrapping="Wrap"/>
+                  <StackPanel Margin="0,6,0,0">
+                    <StackPanel.Style>
+                      <Style TargetType="StackPanel">
+                        <Style.Triggers>
+                          <DataTrigger Binding="{Binding IsDirectory}" Value="True">
+                            <Setter Property="Visibility" Value="Collapsed"/>
+                          </DataTrigger>
+                        </Style.Triggers>
+                      </Style>
+                    </StackPanel.Style>
+                    <TextBlock><Run Text="{Binding Payload.Category, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding Payload.SizeLabel, Mode=OneWay}"/></TextBlock>
+                    <TextBlock Text="{Binding Payload.Entry, StringFormat='ZIP 条目  {0}'}" TextWrapping="Wrap"/>
+                    <TextBlock Text="{Binding Payload.OriginMd5, StringFormat='旧版 MD5  {0}'}"/>
+                    <TextBlock Text="{Binding Payload.ResultMd5, StringFormat='目标 MD5  {0}'}"/>
+                    <TextBlock Text="{Binding Payload.DeltaMd5, StringFormat='差分 MD5  {0}'}"/>
+                  </StackPanel>
+                </StackPanel>
+              </TextBlock.ToolTip>
+            </TextBlock>
+          </HierarchicalDataTemplate>
+        </TreeView.ItemTemplate>
+      </TreeView>
+      <GridSplitter Grid.Column="1" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                    ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" ShowsPreview="False"
+                    AutomationProperties.Name="调整资源树宽度">
+        <GridSplitter.Template>
+          <ControlTemplate TargetType="GridSplitter">
+            <Grid Background="Transparent">
+              <Border x:Name="Divider" Width="1" Background="#E4E7EC" HorizontalAlignment="Center"/>
+            </Grid>
+            <ControlTemplate.Triggers>
+              <Trigger Property="IsMouseOver" Value="True"><Setter TargetName="Divider" Property="Background" Value="#8DA8CF"/></Trigger>
+              <Trigger Property="IsDragging" Value="True"><Setter TargetName="Divider" Property="Background" Value="#2563EB"/></Trigger>
+            </ControlTemplate.Triggers>
+          </ControlTemplate>
+        </GridSplitter.Template>
+      </GridSplitter>
+      <local:HexDiffView Grid.Column="2" x:Name="ResourceHexView"/>
+    </Grid>
+    <Border Grid.Row="1" x:Name="CatalogView" Background="White" BorderBrush="#E4E7EC" BorderThickness="1" Visibility="Collapsed">
           <Grid Margin="12">
             <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
             <DockPanel Margin="0,0,0,12">
               <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
                 <Button x:Name="RefreshButton" Content="刷新官方目录" Click="RefreshCatalog"/>
+                <Button x:Name="OpenPatchButton" Content="打开本地 ZIP…" Click="OpenPatch" ToolTip="可同时选择同一次更新的多个分卷"/>
                 <Button x:Name="DownloadButton" Content="下载并查看" Click="DownloadPatch" IsEnabled="False"/>
-                <Button x:Name="ViewCatalogPatchButton" Content="查看变化资源" Style="{StaticResource Primary}" Click="OpenCatalogPatch" IsEnabled="False" Margin="0"/>
+                <Button x:Name="ViewCatalogPatchButton" Content="打开容器级清单" Style="{StaticResource Primary}" Click="OpenCatalogPatch" IsEnabled="False" Margin="0"/>
               </StackPanel>
               <StackPanel>
                 <TextBlock x:Name="CatalogTitle" Text="官方国服 V3 补丁" FontSize="16" FontWeight="SemiBold"/>
@@ -74,39 +137,7 @@
               <TextBlock x:Name="CatalogDetail" Text="选择一条更新查看 ZIP 分卷。" TextWrapping="Wrap" Foreground="{StaticResource Muted}"/>
             </ScrollViewer>
           </Grid>
-        </TabItem>
-        <TabItem x:Name="ResourcesTab" Header="变化资源" Padding="16,7">
-          <Grid Margin="12">
-            <Grid.RowDefinitions>
-              <RowDefinition Height="Auto"/><RowDefinition Height="3*" MinHeight="120"/><RowDefinition Height="8"/><RowDefinition Height="*" MinHeight="96"/>
-            </Grid.RowDefinitions>
-            <DockPanel Margin="0,0,0,10">
-              <ComboBox x:Name="CategoryFilter" Width="150" DockPanel.Dock="Right" SelectionChanged="FilterResources"/>
-              <TextBlock Text="SqPack 容器级清单" DockPanel.Dock="Left" VerticalAlignment="Center" FontWeight="SemiBold" Margin="0,0,12,0"/>
-              <TextBox x:Name="ResourceSearch" Tag="搜索资源路径、类别或仓库…" MaxWidth="470" HorizontalAlignment="Stretch" ToolTip="搜索资源路径、类别或仓库" TextChanged="FilterResources" Margin="0,0,12,0"/>
-            </DockPanel>
-            <DataGrid Grid.Row="1" x:Name="ResourcesGrid" SelectionChanged="ResourceSelected">
-              <DataGrid.Columns>
-                <DataGridTextColumn Header="资源路径" Binding="{Binding Path}" Width="*"/>
-                <DataGridTextColumn Header="类别" Binding="{Binding Category}" Width="115"/>
-                <DataGridTextColumn Header="资源仓库" Binding="{Binding Repository}" Width="100"/>
-                <DataGridTextColumn Header="差分大小" Binding="{Binding SizeLabel}" Width="125"/>
-                <DataGridTextColumn Header="状态" Binding="{Binding Status}" Width="100"/>
-              </DataGrid.Columns>
-            </DataGrid>
-            <GridSplitter Grid.Row="2" Height="5" HorizontalAlignment="Stretch" VerticalAlignment="Center" ResizeDirection="Rows" ResizeBehavior="PreviousAndNext" Background="#E4E7EC" ShowsPreview="True" ToolTip="拖动调整资源详情高度"/>
-            <Border Grid.Row="3" Background="#F6F8FA" BorderBrush="#E4E7EC" BorderThickness="1" Padding="10" CornerRadius="6">
-              <DockPanel>
-                <TextBlock DockPanel.Dock="Top" Text="资源详情" FontWeight="SemiBold" Margin="0,0,0,6"/>
-                <ScrollViewer VerticalScrollBarVisibility="Auto">
-                  <TextBlock x:Name="ResourceDetail" Text="选择补丁 ZIP，或从补丁目录打开已下载的补丁。" TextWrapping="Wrap" Foreground="{StaticResource Muted}"/>
-                </ScrollViewer>
-              </DockPanel>
-            </Border>
-          </Grid>
-        </TabItem>
-      </TabControl>
-    </Grid>
+    </Border>
     <Grid Grid.Row="1" x:Name="DiffView" Visibility="Collapsed">
       <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
       <DockPanel Margin="0,0,0,8">
@@ -116,15 +147,12 @@
           <TextBlock Text="− 旧值" Foreground="#CF222E" VerticalAlignment="Center" Margin="8,0"/>
           <TextBlock Text="+ 新值" Foreground="#116329" VerticalAlignment="Center"/>
           <CheckBox x:Name="ChangedColumnsOnly" Content="只看变化列" IsChecked="True" VerticalAlignment="Center" Margin="14,0" Click="ColumnsChanged"/>
-          <Button x:Name="FitDiffColumnsButton" Content="按内容调整列宽" Click="ToggleDiffColumnSizing" IsEnabled="False" Padding="10,4"
-                  ToolTip="在表头宽度和当前页每列的最宽单元格之间切换"/>
+          <Button x:Name="FitDiffColumnsButton" Content="重置列宽" Click="ResetDiffColumnSizing" IsEnabled="False" Padding="10,4"
+                  ToolTip="按当前视图的表头和单元格最大宽度重置"/>
           <Button x:Name="RetryMatchButton" Content="重新匹配" Padding="10,4" Margin="0" Click="RetryMatch" Visibility="Collapsed"/>
         </StackPanel>
         <StackPanel VerticalAlignment="Center" Margin="0,0,10,0">
-          <DockPanel>
-            <TextBlock x:Name="DiffVersion" DockPanel.Dock="Left" Foreground="#3869AE" FontWeight="SemiBold" Margin="0,0,12,0" Visibility="Collapsed"/>
-            <TextBlock x:Name="DiffSummary" Text="加载补丁 ZIP 后自动匹配 CHS 历史版本" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
-          </DockPanel>
+          <TextBlock x:Name="DiffSummary" Text="加载补丁 ZIP 后自动匹配 CHS 历史版本" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
           <TextBlock x:Name="DiffMatchError" Foreground="#CF222E" TextWrapping="Wrap" Margin="0,5,0,0" Visibility="Collapsed"/>
         </StackPanel>
       </DockPanel>
@@ -184,10 +212,7 @@
                     ScrollViewer.ScrollChanged="DiffGridScrolled" LostMouseCapture="DiffGridLostMouseCapture"/>
           <TextBlock x:Name="DiffEmptyMessage" Visibility="Collapsed" Margin="12,46,12,0" VerticalAlignment="Top"
                      Foreground="{StaticResource Muted}" TextWrapping="Wrap" IsHitTestVisible="False"/>
-          <DockPanel Grid.Row="1" Margin="0,6,0,0">
-            <StackPanel Orientation="Horizontal" DockPanel.Dock="Right"><Button Content="‹ 列" Click="PreviousColumns" Padding="10,5"/><TextBlock x:Name="ColumnPageLabel" VerticalAlignment="Center" Margin="0,0,8,0"/><Button Content="列 ›" Click="NextColumns" Padding="10,5" Margin="0"/></StackPanel>
-            <StackPanel Orientation="Horizontal"><Button Content="‹ 行" Click="PreviousRows" Padding="10,5"/><TextBlock x:Name="RowPageLabel" VerticalAlignment="Center" Margin="0,0,8,0"/><Button Content="行 ›" Click="NextRows" Padding="10,5"/></StackPanel>
-          </DockPanel>
+
         </Grid>
       </Grid>
       <Popup x:Name="CellDetailsPopup" Placement="Bottom" VerticalOffset="4" StaysOpen="True" AllowsTransparency="True">
@@ -231,9 +256,20 @@
         </DockPanel>
         <TextBlock Text="用于查找已有补丁和选择 ZIP。新下载的补丁仍放在工作区的 tmp/patches。" Foreground="{StaticResource Muted}" TextWrapping="Wrap"/>
         <Button x:Name="LoadLatestPatchButton" Content="打开目录中最新补丁" Click="LoadLatestPatchFromSettings" HorizontalAlignment="Left" Margin="0,10,0,0"/>
+        <TextBlock Text="Godbert 动作解码库" FontWeight="SemiBold" Margin="0,18,0,0"/>
+        <DockPanel Margin="0,8,0,4">
+          <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" Margin="8,0,0,0">
+            <Button Content="选择 DLL…" Click="ChooseGodbertLibrary"/>
+            <Button Content="保存" Click="SaveGodbertLibrary" Margin="0"/>
+          </StackPanel>
+          <TextBox x:Name="GodbertLibrarySetting" Tag="Godbert 安装目录或 hkAnimationInterop.dll 路径"/>
+        </DockPanel>
+        <TextBlock Text="用于读取支持的怪物 PAP 动作。可填写 Godbert 安装目录、Godbert\hkAnimationInterop.dll 的完整路径，或任意包含该 DLL 的目录。清空后保存可移除配置。"
+                   Foreground="{StaticResource Muted}" TextWrapping="Wrap"/>
+        <TextBlock x:Name="GodbertLibraryStatus" TextWrapping="Wrap" Margin="0,6,0,0"/>
       </StackPanel>
     </Border>
-    <DockPanel Grid.Row="2" Margin="0,8,0,0"><Button x:Name="CancelButton" DockPanel.Dock="Right" Content="取消" Padding="12,3" Visibility="Collapsed" Click="Cancel"/><ProgressBar x:Name="Progress" Width="110" Height="4" DockPanel.Dock="Right" Margin="12,0,12,0" Visibility="Collapsed" IsIndeterminate="True"/><TextBlock x:Name="Status" Text="就绪" Foreground="{StaticResource Muted}" FontSize="12" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/></DockPanel>
+    <DockPanel Grid.Row="2" x:Name="MainStatusBar" Margin="0,8,0,0"><Button x:Name="CancelButton" DockPanel.Dock="Right" Content="取消" Padding="12,3" Visibility="Collapsed" Click="Cancel"/><ProgressBar x:Name="Progress" Width="110" Height="4" DockPanel.Dock="Right" Margin="12,0,12,0" Visibility="Collapsed" IsIndeterminate="True"/><TextBlock x:Name="Status" Text="就绪" Foreground="{StaticResource Muted}" FontSize="12" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/></DockPanel>
   </Grid>
 </Grid>
 </Window>

@@ -20,11 +20,11 @@ public partial class MainWindow : Window
     private IReadOnlyList<SheetChange> sheets = [];
     private DiffResult? diff;
     private ChangedRow[] filteredRows = [];
-    private int rowPage, columnPage;
-    private bool fitDiffColumns;
+    private int loadedDiffRows = 100;
+    private bool loadingDiffRows;
     private readonly Dictionary<int, string> columnFilters = new();
     private int editingFilterColumn;
-    private const int RowsPerPage = 100, ColumnsPerPage = 40;
+    private const int RowsPerPage = 100;
 
     public MainWindow()
     {
@@ -35,7 +35,13 @@ public partial class MainWindow : Window
             if (page == SqPackPage.Tables) SqPackNav.IsChecked = true;
             if (page == SqPackPage.Images) LocalImagesNav.IsChecked = true;
         };
-        SqPackView.SettingsRequested += () => SettingsNav.IsChecked = true;
+        SqPackView.MediaControlsChanged += UpdateMediaControls;
+        SqPackView.GameVersionChanged += () =>
+        {
+            SqPackVersion.Text = SqPackView.GameVersionLabel;
+            ResourceHexView.RefreshLocalFiles();
+        };
+        ResourceHexView.GetTargetDirectory = () => SqPackView.ConnectedGamePath ?? SqPackBrowser.RememberedGamePath();
         PreviewMouseDown += DismissCellDetailsOnOutsideClick;
         PreviewKeyDown += DismissCellDetailsOnEscape;
         Deactivated += (_, _) => CloseCellDetails();
@@ -50,6 +56,7 @@ public partial class MainWindow : Window
         });
         Closed += (_, _) =>
         {
+            ResourceHexView.Dispose();
             operation?.Cancel();
             relationOperation?.Cancel();
             relationNavigation?.Cancel();
@@ -69,16 +76,18 @@ public partial class MainWindow : Window
         CloseCellDetails();
         relationNavigation?.Cancel();
         PatchWorkspace.Visibility = Visible(PatchNav);
+        CatalogView.Visibility = Visible(CatalogNav);
+        if (sender == PatchNav || sender == CatalogNav) PatchNavigation.IsExpanded = true;
         DiffView.Visibility = Visible(DiffNav);
         SettingsView.Visibility = Visible(SettingsNav);
         if (sender == SettingsNav) RefreshPathSettings();
 
         (SqPackPage? page, string title) = sender switch
         {
-            _ when sender == SqPackNav => (SqPackPage.Tables, "本地 SqPack · 表格"),
-            _ when sender == LocalImagesNav => (SqPackPage.Images, "本地 SqPack · 图片"),
-            _ when sender == LocalModelsNav => (SqPackPage.Models, "本地 SqPack · 模型"),
-            _ when sender == LocalAudioNav => (SqPackPage.Audio, "本地 SqPack · 音频"),
+            _ when sender == SqPackNav => (SqPackPage.Tables, "SqPack · 表格"),
+            _ when sender == LocalImagesNav => (SqPackPage.Images, "SqPack · 图片"),
+            _ when sender == LocalModelsNav => (SqPackPage.Models, "SqPack · 模型"),
+            _ when sender == LocalAudioNav => (SqPackPage.Audio, "SqPack · 音频"),
             _ when sender == PatchImagesNav => (SqPackPage.PatchImages, "图片 Diff"),
             _ when sender == PatchModelsNav => (SqPackPage.PatchModels, "模型 Diff"),
             _ when sender == PatchAudioNav => (SqPackPage.PatchAudio, "音频 Diff"),
@@ -97,9 +106,24 @@ public partial class MainWindow : Window
         }
         SqPackView.Visibility = page != null ? Visibility.Visible : Visibility.Collapsed;
         PageTitle.Text = title;
+        UpdateMediaControls();
+        UpdateMainStatusVisibility();
 
         static Visibility Visible(RadioButton item) => item.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
     }
+
+    private void UpdateMediaControls()
+    {
+        var onBrowser = SqPackView.Visibility == Visibility.Visible;
+        ScanMediaButton.Visibility = onBrowser && SqPackView.IsMediaPage ? Visibility.Visible : Visibility.Collapsed;
+        ScanMediaButton.IsEnabled = SqPackView.CanScanMedia;
+        ScanMediaButton.Content = SqPackView.IsPatchMediaPage ? "完整扫描" : "扫描资源索引";
+        ScanMediaButton.ToolTip = SqPackView.IsPatchMediaPage
+            ? "校验本地目标容器，补查原始路径未识别的资源。"
+            : "扫描 SqPack 索引，查找已知目录之外的资源。";
+    }
+
+    private async void ScanCurrentMedia(object sender, RoutedEventArgs e) => await SqPackView.ScanCurrentMediaAsync();
 
     private void SetBusy(bool busy)
     {
@@ -109,7 +133,11 @@ public partial class MainWindow : Window
         SheetsList.IsEnabled = !busy;
         SheetSearch.IsEnabled = !busy;
         CancelButton.Visibility = Progress.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
+        UpdateMainStatusVisibility();
     }
+
+    private void UpdateMainStatusVisibility() => MainStatusBar.Visibility =
+        SqPackView.Visibility != Visibility.Visible || operation != null ? Visibility.Visible : Visibility.Collapsed;
     private async Task Work(string message, Func<CancellationToken, Task> action)
     {
         if (operation != null) return;
@@ -145,41 +173,27 @@ public partial class MainWindow : Window
         var loaded = await Task.Run(() => PatchArchive.Load(files), token);
         token.ThrowIfCancellationRequested();
         patch = loaded;
+        before = after = null;
+        UpdateDiffVersion();
         SqPackView.SetPatch(loaded, files);
-        PatchTitle.Text = patch.From != null ? patch.From + " → " + patch.To : patch.Name;
-        PatchTitle.ToolTip = patch.Name;
-        var missing = patch.Resources.Count(r => !r.Available);
-        PatchInfo.Text = $"{patch.ArchiveCount} 个 ZIP · {patch.Resources.Count:N0} 个变化文件 · {patch.Resources.Select(r => r.Category).Distinct().Count()} 个类别"
-            + (missing > 0 ? $" · {missing} 个文件缺少分卷" : "");
-        CategoryFilter.ItemsSource = new[] { "全部类别" }.Concat(patch.Resources.Select(r => r.Category).Distinct().Order()).ToArray();
-        CategoryFilter.SelectedIndex = 0; ResourceSearch.Clear();
-        ApplyResourceFilter();
-        UpdateResourceDetail();
-        ResourcesTab.IsSelected = true;
+        ResourceHexView.SetPatch(files);
+        var resources = PathTree.Build(patch.Resources, resource => resource.Path);
+        if (resources.FirstOrDefault(node => node.FullPath == "game" && node.IsDirectory) is { } gameNode)
+        {
+            gameNode.IsExpanded = true;
+            if (gameNode.Children.FirstOrDefault(node => node.FullPath == "game/sqpack" && node.IsDirectory) is { } sqpackNode)
+                sqpackNode.IsExpanded = true;
+        }
+        ResourcesTree.ItemsSource = resources;
+        PatchNav.IsChecked = true;
         UpdateCatalogSelection();
-        before = after = null; ResetComparison();
+        ResetComparison();
         await MatchPatch(token);
     }
-    private void FilterResources(object sender, RoutedEventArgs e) { if (ready) ApplyResourceFilter(); }
-    private void ApplyResourceFilter()
+    private void ResourceSelected(object sender, RoutedPropertyChangedEventArgs<object> e)
     {
-        var text = ResourceSearch.Text.Trim();
-        var category = CategoryFilter.SelectedItem as string;
-        ResourcesGrid.ItemsSource = patch?.Resources.Where(r => (category is null or "全部类别" || r.Category == category)
-            && (r.Path.Contains(text, StringComparison.OrdinalIgnoreCase) || r.Category.Contains(text, StringComparison.OrdinalIgnoreCase)
-                || r.Repository.Contains(text, StringComparison.OrdinalIgnoreCase))).ToArray();
-    }
-    private void ResourceSelected(object sender, SelectionChangedEventArgs e) { if (ready) UpdateResourceDetail(); }
-    private void UpdateResourceDetail()
-    {
-        ResourceDetail.Text = ResourcesGrid.SelectedItem is PatchResource item
-            ? $"{item.Path}\nZIP 条目：{item.Entry}\n旧 MD5：{item.OriginMd5}    新 MD5：{item.ResultMd5}\n差分 MD5：{item.DeltaMd5} · {item.Status}"
-            : patch == null ? "选择补丁 ZIP，或从补丁目录打开已下载的补丁。" : "选择资源查看 ZIP 条目和校验值。";
-    }
-    private void ShowDiff(object sender, RoutedEventArgs e) => DiffNav.IsChecked = true;
-    private void ShowPatchImages(object sender, RoutedEventArgs e)
-    {
-        PatchImagesNav.IsChecked = true;
+        if (!ready) return;
+        ResourceHexView.SelectResource((e.NewValue as PathTreeNode)?.Payload as PatchResource);
     }
 
     private async void RetryMatch(object sender, RoutedEventArgs e) => await Work("正在匹配历史表格…", MatchPatch);
@@ -219,17 +233,18 @@ public partial class MainWindow : Window
     }
     private void UpdateDiffVersion()
     {
-        DiffVersion.Visibility = patch is { From: not null, To: not null } ? Visibility.Visible : Visibility.Collapsed;
+        DiffVersion.Text = patch is { From: not null, To: not null } ? $"{patch.From} → {patch.To}" : patch?.Name ?? "未选择";
+        DiffVersion.ToolTip = patch?.Name;
+        DiffGameVersions.Visibility = Visibility.Collapsed;
         if (patch is not { From: not null, To: not null }) return;
 
         var oldGameVersion = GameVersion(before, patch.From);
         var newGameVersion = GameVersion(after, patch.To);
-        DiffVersion.Text = oldGameVersion != null && newGameVersion != null
-            ? oldGameVersion + " → " + newGameVersion
-            : patch.From + " → " + patch.To;
-        DiffVersion.ToolTip = before != null && after != null
-            ? before.Label + " → " + after.Label
-            : "补丁数据版本 " + patch.From + " → " + patch.To;
+        if (oldGameVersion != null && newGameVersion != null)
+        {
+            DiffGameVersions.Text = $"{oldGameVersion} → {newGameVersion}";
+            DiffGameVersions.Visibility = Visibility.Visible;
+        }
     }
     private string? GameVersion(ITableSource? source, string dataVersion)
     {
@@ -246,11 +261,10 @@ public partial class MainWindow : Window
         CloseCellDetails();
         DiffEmptyMessage.Visibility = Visibility.Collapsed;
         sheets = []; SheetsList.ItemsSource = null;
-        diff = null; filteredRows = []; rowPage = columnPage = 0;
+        diff = null; filteredRows = [];
         DiffGrid.ItemsSource = null; DiffGrid.Columns.Clear();
         FitDiffColumnsButton.IsEnabled = false;
         columnFilters.Clear(); ColumnFilterPopup.IsOpen = false; ClearFiltersButton.Visibility = Visibility.Collapsed;
-        RowPageLabel.Text = ColumnPageLabel.Text = "";
     }
     private void BindSources()
     {
@@ -278,7 +292,7 @@ public partial class MainWindow : Window
             var data = await Task.WhenAll(before.Read(sheet.Name, token), after.Read(sheet.Name, token));
             var result = await Task.Run(() => TableDiff.Compare(data[0], data[1], token), token);
             token.ThrowIfCancellationRequested();
-            diff = result; rowPage = columnPage = 0;
+            diff = result;
             SetDiffRelationSources(sheet.Name, data[0], data[1]);
             DiffSummary.Text = $"{sheets.Count:N0} 张变化表 · {sheet.Name}：+{diff.Added:N0} / −{diff.Removed:N0} / ~{diff.Modified:N0} 行 · {diff.UnchangedRows:N0} 行不变";
             ApplyRowFilter();
@@ -286,6 +300,7 @@ public partial class MainWindow : Window
     }
     private void ApplyRowFilter()
     {
+        loadedDiffRows = RowsPerPage;
         filteredRows = diff?.Rows.Where(r => CellPresentation.Matches(r, columnFilters)).ToArray() ?? [];
         ClearFiltersButton.Content = $"清除筛选 ({columnFilters.Count})";
         ClearFiltersButton.Visibility = columnFilters.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -293,7 +308,7 @@ public partial class MainWindow : Window
     }
     private void ClearFilters(object sender, RoutedEventArgs e)
     {
-        columnFilters.Clear(); ColumnFilterPopup.IsOpen = false; rowPage = 0; ApplyRowFilter();
+        columnFilters.Clear(); ColumnFilterPopup.IsOpen = false; ApplyRowFilter();
     }
     private FrameworkElement FilterHeader(int index, string title, string detail, bool schemaChanged = false)
     {
@@ -332,29 +347,23 @@ public partial class MainWindow : Window
         var value = ColumnFilterInput.Text.Trim();
         if (value.Length == 0) columnFilters.Remove(editingFilterColumn);
         else columnFilters[editingFilterColumn] = value;
-        ColumnFilterPopup.IsOpen = false; rowPage = 0; ApplyRowFilter();
+        ColumnFilterPopup.IsOpen = false; ApplyRowFilter();
     }
     private void ClearColumnFilter(object sender, RoutedEventArgs e)
     {
         columnFilters.Remove(editingFilterColumn);
-        ColumnFilterPopup.IsOpen = false; rowPage = 0; ApplyRowFilter();
+        ColumnFilterPopup.IsOpen = false; ApplyRowFilter();
     }
-    private void ColumnsChanged(object sender, RoutedEventArgs e) { columnPage = 0; RenderDiff(updateRelations: false); }
-    private void PreviousColumns(object sender, RoutedEventArgs e) { columnPage = Math.Max(0, columnPage - 1); RenderDiff(updateRelations: false); }
-    private void NextColumns(object sender, RoutedEventArgs e) { columnPage++; RenderDiff(updateRelations: false); }
-    private void PreviousRows(object sender, RoutedEventArgs e) { rowPage = Math.Max(0, rowPage - 1); RenderDiff(); }
-    private void NextRows(object sender, RoutedEventArgs e) { rowPage++; RenderDiff(); }
-
-    private void ToggleDiffColumnSizing(object sender, RoutedEventArgs e)
+    private void ColumnsChanged(object sender, RoutedEventArgs e) { RenderDiff(updateRelations: false); }
+    private void ResetDiffColumnSizing(object sender, RoutedEventArgs e)
     {
         if (DiffGrid.ItemsSource is not IReadOnlyList<DiffLine> lines) return;
-        fitDiffColumns = !fitDiffColumns;
-        FitDiffColumnsButton.Content = fitDiffColumns ? "按表头调整列宽" : "按内容调整列宽";
+
         ApplyDiffColumnSizing(lines);
     }
 
     private void ApplyDiffColumnSizing(IReadOnlyList<DiffLine> lines)
-        => TableColumnSizing.Apply(DiffGrid, lines, fitDiffColumns, (line, index) =>
+        => TableColumnSizing.Apply(DiffGrid, lines, (line, index) =>
         {
             if (index == 0) return (line.Label, 0, false);
             var cell = line.Cells[index - 1];
@@ -367,12 +376,9 @@ public partial class MainWindow : Window
         CloseCellDetails();
         if (diff == null) return;
         if (updateRelations) ClearDiffRelationPresentation();
-        var columnIds = Enumerable.Range(0, diff.Columns.Count).Where(i => ChangedColumnsOnly.IsChecked != true
+        var visibleColumns = Enumerable.Range(0, diff.Columns.Count).Where(i => ChangedColumnsOnly.IsChecked != true
             || diff.Columns[i].SchemaChanged || diff.Rows.Any(r => r.Changed[i])).ToArray();
-        var rowPages = Math.Max(1, (filteredRows.Length + RowsPerPage - 1) / RowsPerPage);
-        var columnPages = Math.Max(1, (columnIds.Length + ColumnsPerPage - 1) / ColumnsPerPage);
-        rowPage = Math.Clamp(rowPage, 0, rowPages - 1); columnPage = Math.Clamp(columnPage, 0, columnPages - 1);
-        var visibleColumns = columnIds.Skip(columnPage * ColumnsPerPage).Take(ColumnsPerPage).ToArray();
+        var restore = TableColumnSizing.Capture(DiffGrid, !updateRelations);
         DiffGrid.ItemsSource = null; DiffGrid.Columns.Clear();
         DiffGrid.Columns.Add(new DataGridTemplateColumn { Header = FilterHeader(-1, "Row / Subrow", "按行号筛选"), Width = DataGridLength.SizeToHeader, CellTemplate = CellTemplate("Label", "Color", "Background"), CellStyle = DiffCellStyle() });
         foreach (var (index, local) in visibleColumns.Select((n, i) => (n, i)))
@@ -386,7 +392,7 @@ public partial class MainWindow : Window
             });
         }
         var lines = new List<DiffLine>();
-        foreach (var row in filteredRows.Skip(rowPage * RowsPerPage).Take(RowsPerPage))
+        foreach (var row in filteredRows.Take(loadedDiffRows))
         {
             if (row.Before != null) lines.Add(MakeLine(row, false, visibleColumns));
             if (row.After != null) lines.Add(MakeLine(row, true, visibleColumns));
@@ -394,8 +400,7 @@ public partial class MainWindow : Window
         DiffGrid.ItemsSource = lines;
         FitDiffColumnsButton.IsEnabled = lines.Count > 0;
         ApplyDiffColumnSizing(lines);
-        RowPageLabel.Text = $"{rowPage + 1}/{rowPages} · {filteredRows.Length:N0} 行";
-        ColumnPageLabel.Text = $"{columnPage + 1}/{columnPages} · {columnIds.Length:N0} 列";
+        restore();
         DiffEmptyMessage.Visibility = lines.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
         if (lines.Count == 0)
         {
@@ -510,6 +515,27 @@ public partial class MainWindow : Window
     private void DiffGridScrolled(object sender, ScrollChangedEventArgs e)
     {
         if (e.HorizontalChange != 0 || e.VerticalChange != 0) CloseCellDetails();
+        if (!loadingDiffRows && e.VerticalChange > 0 && e.VerticalOffset + e.ViewportHeight >= e.ExtentHeight - 10
+            && loadedDiffRows < filteredRows.Length)
+        {
+            loadingDiffRows = true;
+            var rows = filteredRows;
+            Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(() =>
+            {
+                try
+                {
+                    if (!ReferenceEquals(rows, filteredRows)) return;
+                    loadedDiffRows += RowsPerPage;
+                    RenderDiff(updateRelations: false);
+                    if (DiffLinked.IsChecked == true)
+                    {
+                        relationOperation?.Cancel();
+                        diffRelationPresentationTask = LoadDiffRelationPresentation();
+                    }
+                }
+                finally { loadingDiffRows = false; }
+            }));
+        }
     }
 
     private void DiffGridLostMouseCapture(object sender, MouseEventArgs e)
@@ -605,7 +631,7 @@ public partial class MainWindow : Window
         if (CatalogGrid.SelectedItem is not CatalogRow row) return;
         if (row.Paths == null)
         {
-            if (IsCurrentPatch(row.Package)) ResourcesTab.IsSelected = true;
+            if (IsCurrentPatch(row.Package)) PatchNav.IsChecked = true;
             return;
         }
 

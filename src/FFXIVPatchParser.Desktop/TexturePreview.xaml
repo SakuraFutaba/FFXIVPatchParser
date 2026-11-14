@@ -23,8 +23,8 @@
       <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
     <WrapPanel x:Name="Actions" Margin="0,0,0,4" IsEnabled="False">
-      <Button Content="适应窗口" ToolTip="重置缩放与位置" Click="FitImage" Style="{StaticResource PreviewButton}"/>
-      <Button Content="100%" ToolTip="居中显示原始像素大小" Click="ShowActualSize" Style="{StaticResource PreviewButton}"/>
+      <Button x:Name="ToggleZoomButton" Content="适应窗口" MinWidth="76" ToolTip="适应窗口并居中"
+              Click="ToggleZoom" Style="{StaticResource PreviewButton}"/>
       <ComboBox x:Name="BackgroundChoice" Height="30" Margin="0,0,6,4" Padding="7,3" SelectedIndex="0"
                 SelectionChanged="ChangeBackground" AutomationProperties.Name="预览背景">
         <ComboBoxItem Content="棋盘背景"/>

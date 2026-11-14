@@ -55,3 +55,15 @@ VCDIFF 用旧文件正向构造目标，被删除或覆盖的旧字节可能没�
 上游安装器用 xdelta3 把差分写到临时文件，校验结果后替换旧文件。合并失败时，安装器可下载完整的最新目标文件来完成客户端更新。 [GamePatchInstaller](https://github.com/AtmoOmen/FFXIVQuickLauncher/blob/65972f758b47615f321d4f3da509e3ade3b14489/src/XIVLauncher.GamePatchV3/Update/GamePatchInstaller.cs) · [xdelta3 桥接](https://github.com/AtmoOmen/FFXIVQuickLauncher/blob/65972f758b47615f321d4f3da509e3ade3b14489/src/XIVLauncher.XdeltaShim/src/xdelta_bridge.c)
 
 当前表格 Diff 使用按构建匹配的历史 CHS CSV 比较导出值。媒体 Diff 从补丁里读写入区间，在本地目标容器中筛选候选。完整的 VCDIFF 历史还原尚未实现。 [表格 Diff 与关联](table-diff.md) · [SqPack 与媒体](sqpack-media.md) · [复现实验与验证](verification.md)
+
+## 容器级分段 Hex 查看
+
+[分段读取器](../src/FFXIVPatchParser/PatchHexSession.cs)对每条 `PatchResource` 提供三种来源：解压并校验 DeltaMD5 后的 VCDIFF 原始字节、通过 ResultMD5 的目标文件字节，以及通过 OriginMD5 的旧文件字节。选中资源后即可查看差分和写入区间。程序随后自动校验当前游戏目录中的目标文件。新旧对照使用相同的文件偏移，文件末尾以外留空。
+
+写入区间来自 ADD、RUN 与非原偏移 COPY 指令，相邻区间会合并。它表示差分如何构造目标，不保证区间内每个字节都改变：容器重排和复制也会命中。只有实际取得两侧经验证字节时，才能判断同一偏移是否不同。没有旧文件时旧字节保持未知；若清单 OriginMD5 是空文件摘要，则旧长度可直接确定为 0。 [指令读取](../src/FFXIVPatchParser/VcdiffRanges.cs)
+
+此实现不反向推导被覆盖的旧值，也不复制或重建整个 DAT。VCDIFF 使用 `tmp/` 中随会话关闭删除的临时文件；文件摘要和解压采用 64 KiB 缓冲，每页最多读取 64 KiB。Hex 分析为单个窗口的指令和地址节合计设置 32 MiB 上限，并限制最多一百万个合并区间；无法解析的格式或超限样本仍保留原始 VCDIFF 查看。读取、摘要计算和区间解析支持取消。
+
+2026-11-13 本项目实测：国服中文 7.58（构建 `2026.11.03.0000.0000`）对应 `.30 → .31` 补丁的 47 个资源全部通过 DeltaMD5 和区间解析，共得到 9,341 个合并写入区间；其中 Excel 的 DAT、index、index2 三个本地文件通过 ResultMD5，且成功读取首个写入区间。合成样本验证了旧新同偏移读取、EOF 截断、错误摘要拒绝、缺少旧版、空旧文件、目录选择、路径越界拒绝、取消和临时文件清理。旧版真实客户端尚未用于此功能验证，因此旧新对照的结论来自合成样本。
+
+后续可按文件类型提供结构注释。对 `ffxiv_dx11.exe` 一类 PE 文件，可先标注文件偏移对应的节，只在代码节中尝试反汇编。对于数据节，保留十六进制和结构说明。

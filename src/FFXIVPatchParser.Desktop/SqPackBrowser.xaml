@@ -22,12 +22,16 @@
       <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled"/>
       <Setter Property="BorderBrush" Value="#E4E7EC"/>
     </Style>
+    <Style x:Key="PatchScanSummary" TargetType="TextBlock">
+      <Setter Property="Foreground" Value="{StaticResource Muted}"/>
+      <Setter Property="TextWrapping" Value="Wrap"/>
+      <Setter Property="TextTrimming" Value="CharacterEllipsis"/>
+      <Setter Property="MaxHeight" Value="54"/>
+      <Setter Property="ToolTip" Value="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+    </Style>
     <HierarchicalDataTemplate x:Key="PathTreeLabel" ItemsSource="{Binding Children}">
       <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" ToolTip="{Binding FullPath}"/>
     </HierarchicalDataTemplate>
-    <DataTemplate x:Key="PatchMediaLabel">
-      <TextBlock Text="{Binding Path}" ToolTip="{Binding Path}" TextTrimming="CharacterEllipsis"/>
-    </DataTemplate>
     <HierarchicalDataTemplate x:Key="PatchPathTreeLabel" ItemsSource="{Binding Children}">
       <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis">
         <TextBlock.ToolTip>
@@ -59,23 +63,10 @@
   </UserControl.Resources>
   <Grid>
     <Grid.RowDefinitions>
-      <RowDefinition Height="Auto"/>
       <RowDefinition Height="*"/>
       <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
-    <Border Background="White" BorderBrush="#E4E7EC" BorderThickness="1" CornerRadius="9" Padding="12" Margin="0,0,0,10">
-      <DockPanel>
-        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="10,0,0,0">
-          <Button Content="路径设置" Click="OpenPathSettings" Margin="0"/>
-        </StackPanel>
-        <StackPanel>
-          <TextBlock Text="本地游戏 · SqPack" FontWeight="SemiBold"/>
-          <TextBlock x:Name="GamePathLabel" Text="选择包含 sqpack 的 game 目录，或直接选择 sqpack 目录。"
-                     Foreground="{StaticResource Muted}" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"/>
-        </StackPanel>
-      </DockPanel>
-    </Border>
-        <Grid Grid.Row="1" x:Name="TablesPanel" IsEnabled="False">
+        <Grid x:Name="TablesPanel" IsEnabled="False">
           <Grid.ColumnDefinitions>
             <ColumnDefinition Width="196"/>
             <ColumnDefinition Width="8"/>
@@ -100,8 +91,8 @@
                 <Button Content="导入定义…" Click="ImportTableDefinitions" ToolTip="导入 SaintCoinach 定义目录"/>
                 <Button x:Name="ReloadRowsButton" Content="重新读取" Click="ReloadRows" IsEnabled="False"/>
                 <Button x:Name="ClearTableFiltersButton" Content="清除筛选" Click="ClearTableFilters" IsEnabled="False"/>
-                <Button x:Name="FitTableColumnsButton" Content="按内容调整列宽" Click="ToggleTableColumnSizing" IsEnabled="False" Margin="0"
-                        ToolTip="在表头宽度和当前页每列的最宽单元格之间切换"/>
+                <Button x:Name="FitTableColumnsButton" Content="重置列宽" Click="ResetTableColumnSizing" IsEnabled="False" Margin="0"
+                        ToolTip="按当前视图的表头和单元格最大宽度重置"/>
               </StackPanel>
               <TextBlock x:Name="TableInfo" Text="选择一张表查看完整内容" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
             </DockPanel>
@@ -109,18 +100,7 @@
                       RowHeaderWidth="0" RowHeaderStyle="{StaticResource HiddenTableRowHeader}"
                       CanUserReorderColumns="False" PreviewMouseLeftButtonUp="TableCellClicked" PreviewKeyDown="TableGridKeyDown"
                       ScrollViewer.ScrollChanged="TableGridScrolled" LostMouseCapture="TableGridLostMouseCapture"/>
-            <DockPanel Grid.Row="2" Margin="0,6,0,0">
-              <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                <Button x:Name="PreviousColumnsButton" Content="‹ 列" Click="PreviousColumns" IsEnabled="False"/>
-                <TextBlock x:Name="ColumnPageLabel" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                <Button x:Name="NextColumnsButton" Content="列 ›" Click="NextColumns" IsEnabled="False" Margin="0"/>
-              </StackPanel>
-              <StackPanel Orientation="Horizontal">
-                <Button x:Name="PreviousRowsButton" Content="‹ 行" Click="PreviousRows" IsEnabled="False"/>
-                <TextBlock x:Name="RowPageLabel" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                <Button x:Name="NextRowsButton" Content="行 ›" Click="NextRows" IsEnabled="False"/>
-              </StackPanel>
-            </DockPanel>
+
           </Grid>
           <Popup x:Name="TableFilterPopup" Placement="Bottom" StaysOpen="False" AllowsTransparency="True">
             <Border Background="White" BorderBrush="#D0D7DE" BorderThickness="1" CornerRadius="6" Padding="12" Width="300">
@@ -157,9 +137,9 @@
             </Border>
           </Popup>
         </Grid>
-        <Grid Grid.Row="1" x:Name="LocalImagesPanel" IsEnabled="False" Visibility="Collapsed" IsVisibleChanged="LocalImagesVisibilityChanged">
+        <Grid x:Name="LocalImagesPanel" IsEnabled="False" Visibility="Collapsed" IsVisibleChanged="LocalImagesVisibilityChanged">
           <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="330"/>
+            <ColumnDefinition Width="310"/>
             <ColumnDefinition Width="8"/>
             <ColumnDefinition Width="*"/>
           </Grid.ColumnDefinitions>
@@ -169,14 +149,7 @@
               <RowDefinition Height="*"/>
               <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
-            <StackPanel Margin="0,0,0,6">
-              <DockPanel Margin="0,0,0,6">
-                <Button x:Name="ScanIconsButton" DockPanel.Dock="Right" Content="扫描未识别" Click="ScanIcons" Margin="6,0,0,0"
-                        ToolTip="扫描 UI 容器，追加尚未还原路径的纹理；图片仍可尝试预览。"/>
-                <Button Content="读取目录" Click="ReadIconCatalog"/>
-              </DockPanel>
-              <TextBox x:Name="IconSearch" Tag="筛选路径或编号…" ToolTip="筛选图标路径或编号" TextChanged="FilterIcons"/>
-            </StackPanel>
+            <TextBox x:Name="IconSearch" Tag="筛选路径或编号…" ToolTip="筛选图标路径或编号" TextChanged="FilterIcons" Margin="0,0,0,6"/>
             <DockPanel Grid.Row="1">
               <TextBlock x:Name="TextureTreeCount" Text="尚未读取目录" DockPanel.Dock="Bottom" Foreground="{StaticResource Muted}" Margin="0,6,0,0"/>
               <TreeView x:Name="TextureTree" Style="{StaticResource PathTreeView}" ItemTemplate="{StaticResource PathTreeLabel}"
@@ -222,50 +195,44 @@
             <local:TexturePreview x:Name="LocalTexturePreview" Grid.Row="1"/>
           </Grid>
         </Grid>
-    <local:ModelPreview Grid.Row="1" x:Name="LocalModelsPanel" Visibility="Collapsed" RelatedTableRequested="OpenModelSheet"/>
-    <local:AudioPreview Grid.Row="1" x:Name="LocalAudioPanel" Visibility="Collapsed"/>
-    <Grid Grid.Row="1" x:Name="PatchModelsPanel" Visibility="Collapsed">
-      <Grid.ColumnDefinitions><ColumnDefinition Width="310"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+    <local:ModelPreview x:Name="LocalModelsPanel" Visibility="Collapsed" RelatedTableRequested="OpenModelSheet"/>
+    <local:AudioPreview x:Name="LocalAudioPanel" Visibility="Collapsed"/>
+    <Grid x:Name="PatchModelsPanel" Visibility="Collapsed">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="310"/><ColumnDefinition Width="8"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
       <DockPanel>
-        <Button x:Name="ScanPatchModelsButton" DockPanel.Dock="Top" Content="分析模型 Diff" Click="ScanPatchModels" Margin="0,0,0,8" IsEnabled="False"/>
-        <ComboBox x:Name="PatchModelContainer" DockPanel.Dock="Top" Margin="0,0,0,8" ToolTip="可选择单个容器缩小扫描范围"/>
-        <TextBlock x:Name="PatchModelsSummary" DockPanel.Dock="Bottom" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,8,0,0"/>
-        <ListBox x:Name="PatchModelsList" ItemTemplate="{StaticResource PatchMediaLabel}" ScrollViewer.HorizontalScrollBarVisibility="Disabled" SelectionChanged="PatchModelSelected"/>
+        <TextBox x:Name="PatchModelSearch" DockPanel.Dock="Top" Tag="筛选模型路径…" Margin="0,0,0,6"
+                 TextChanged="FilterPatchModels"/>
+        <TextBlock x:Name="PatchModelsSummary" DockPanel.Dock="Bottom" Style="{StaticResource PatchScanSummary}" Margin="0,6,0,0"/>
+        <TreeView x:Name="PatchModelsList" Style="{StaticResource PathTreeView}" ItemTemplate="{StaticResource PathTreeLabel}"
+                  SelectedItemChanged="PatchModelSelected"/>
       </DockPanel>
       <local:ModelPreview Grid.Column="2" x:Name="PatchModelPreview" ShowBrowser="False"/>
     </Grid>
-    <Grid Grid.Row="1" x:Name="PatchAudioPanel" Visibility="Collapsed">
-      <Grid.ColumnDefinitions><ColumnDefinition Width="310"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+    <Grid x:Name="PatchAudioPanel" Visibility="Collapsed">
+      <Grid.ColumnDefinitions><ColumnDefinition Width="310"/><ColumnDefinition Width="8"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
       <DockPanel>
-        <Button x:Name="ScanPatchAudioButton" DockPanel.Dock="Top" Content="分析音频 Diff" Click="ScanPatchAudio" Margin="0,0,0,8" IsEnabled="False"/>
-        <ComboBox x:Name="PatchAudioContainer" DockPanel.Dock="Top" Margin="0,0,0,8" ToolTip="可选择单个容器缩小扫描范围"/>
-        <TextBlock x:Name="PatchAudioSummary" DockPanel.Dock="Bottom" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,8,0,0"/>
-        <ListBox x:Name="PatchAudioList" ItemTemplate="{StaticResource PatchMediaLabel}" ScrollViewer.HorizontalScrollBarVisibility="Disabled" SelectionChanged="PatchAudioSelected"/>
+        <TextBox x:Name="PatchAudioSearch" DockPanel.Dock="Top" Tag="筛选音频路径…" Margin="0,0,0,6"
+                 TextChanged="FilterPatchAudio"/>
+        <TextBlock x:Name="PatchAudioSummary" DockPanel.Dock="Bottom" Style="{StaticResource PatchScanSummary}" Margin="0,6,0,0"/>
+        <TreeView x:Name="PatchAudioList" Style="{StaticResource PathTreeView}" ItemTemplate="{StaticResource PathTreeLabel}"
+                  SelectedItemChanged="PatchAudioSelected"/>
       </DockPanel>
       <local:AudioPreview Grid.Column="2" x:Name="PatchAudioPreview" ShowBrowser="False"/>
     </Grid>
-    <Grid Grid.Row="1" x:Name="PatchImagesPanel" Visibility="Collapsed">
-      <Grid.RowDefinitions>
-        <RowDefinition Height="Auto"/>
-        <RowDefinition Height="*"/>
-      </Grid.RowDefinitions>
-      <DockPanel Margin="0,0,0,8">
-        <Button x:Name="ScanPatchButton" DockPanel.Dock="Right" Content="分析图片 Diff" Click="ScanPatch" IsEnabled="False" Margin="8,0,0,0"/>
-        <StackPanel>
-          <TextBlock x:Name="PatchName" Text="请先在补丁工作区打开补丁 ZIP。" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
-          <TextBlock x:Name="PatchSummary" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,4,0,0"/>
-        </StackPanel>
-      </DockPanel>
-      <Grid Grid.Row="1">
+    <Grid x:Name="PatchImagesPanel" Visibility="Collapsed">
+      <Grid>
         <Grid.ColumnDefinitions>
-          <ColumnDefinition Width="380"/>
+          <ColumnDefinition Width="310"/>
           <ColumnDefinition Width="8"/>
           <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
         <DockPanel>
           <TextBox x:Name="PatchImageSearch" DockPanel.Dock="Top" Tag="筛选图片路径或变化依据…" ToolTip="筛选图片 Diff" Margin="0,0,0,6"
                    TextChanged="FilterPatchImages"/>
-          <TextBlock x:Name="PatchImageCount" DockPanel.Dock="Bottom" Foreground="{StaticResource Muted}" Margin="0,6,0,0"/>
+          <StackPanel DockPanel.Dock="Bottom" Margin="0,6,0,0">
+            <TextBlock x:Name="PatchImageCount" Foreground="{StaticResource Muted}"/>
+            <TextBlock x:Name="PatchSummary" Style="{StaticResource PatchScanSummary}"/>
+          </StackPanel>
           <TreeView x:Name="PatchImagesList" Style="{StaticResource PathTreeView}" ItemTemplate="{StaticResource PatchPathTreeLabel}"
                     SelectedItemChanged="PatchImageSelected"/>
         </DockPanel>
@@ -279,8 +246,8 @@
         </Grid>
       </Grid>
     </Grid>
-    <DockPanel Grid.Row="2" Margin="0,8,0,0">
-      <Button x:Name="CancelBrowserButton" DockPanel.Dock="Right" Content="取消读取" Click="CancelBrowser"
+    <DockPanel Grid.Row="1" x:Name="BrowserStatusBar" Margin="0,8,0,0">
+      <Button x:Name="CancelBrowserButton" DockPanel.Dock="Right" Content="取消" Click="CancelBrowser"
               Visibility="Collapsed" Padding="10,3" Margin="8,0,0,0"/>
       <ProgressBar x:Name="BrowserProgress" DockPanel.Dock="Right" Width="110" Height="4" IsIndeterminate="True" Visibility="Collapsed"/>
       <TextBlock x:Name="BrowserStatus" Foreground="{StaticResource Muted}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"

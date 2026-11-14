@@ -11,12 +11,26 @@ public sealed record PatchMediaScanResult(IReadOnlyList<PatchMediaEntry> Entries
 
 public static class PatchImageScanner
 {
+    /// <summary>自动候选仅验证索引和差分；数据容器尚未完整校验。</summary>
+    public static PatchImageScanResult ScanKnownPaths(LocalGameSource source, LoadedPatch patch, IEnumerable<string> archivePaths,
+        CancellationToken token = default, IProgress<string>? progress = null)
+    {
+        var skipped = new List<string>();
+        var ranges = PatchMediaScanner.ReadRanges(source, patch, archivePaths, ["ui"], token, progress, verifyContainers: false, skippedContainers: skipped);
+        if (ranges.Count == 0 && skipped.Count == 0) return new([], "本补丁没有 UI 数据容器更改。");
+        var entries = source.ListKnownMediaLocations("image", ranges, token)
+            .Select(item => new PatchImageEntry(item.Path, item.Container, item.Offset, PatchMediaScanner.KnownPathEvidence)).ToArray();
+        return new(entries, $"{entries.Length:N0} 张已知路径图片写入候选。" +
+            PatchMediaScanner.KnownPathSummary(ranges.Count, skipped));
+    }
+
     public static PatchImageScanResult Scan(LocalGameSource source, LoadedPatch patch, IEnumerable<string> archivePaths,
         CancellationToken token = default, IProgress<string>? progress = null)
     {
         var ranges = PatchMediaScanner.ReadRanges(source, patch, archivePaths, ["ui"], token, progress);
         if (ranges.Count == 0) return new([], "本补丁没有 UI 数据容器更改。");
-        var textures = source.EnumerateUiTextures(token);
+        var textures = source.EnumerateUiTextures(token, ranges.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase),
+            (path, start, end) => PatchMediaScanner.Overlaps(ranges, path, start, end));
         const string evidence = "目标容器与差分 MD5 已验证。纹理存储区间（含对齐填充）与 VCDIFF 写入区间相交，可能包含容器重排。";
         var images = textures.Where(texture => PatchMediaScanner.Overlaps(ranges, texture.Container, texture.Offset, texture.End))
             .Select(texture => new PatchImageEntry(texture.Path, texture.Container, texture.Offset, evidence)).ToArray();
@@ -26,6 +40,25 @@ public static class PatchImageScanner
 
 public static class PatchMediaScanner
 {
+    internal const string KnownPathEvidence = "已校验目标索引和差分。数据容器留待完整扫描校验。写入候选可能包含容器重排。";
+
+    /// <summary>自动候选仅验证索引和差分；未知路径由完整扫描补充。</summary>
+    public static PatchMediaScanResult ScanKnownPaths(LocalGameSource source, LoadedPatch patch, IEnumerable<string> archivePaths,
+        PatchMediaKind kind, CancellationToken token = default, IProgress<string>? progress = null, string? container = null)
+    {
+        var label = kind == PatchMediaKind.Model ? "模型" : "音频";
+        var skipped = new List<string>();
+        var ranges = ReadRanges(source, patch, archivePaths, Categories(kind), token, progress, container, verifyContainers: false, skippedContainers: skipped);
+        if (ranges.Count == 0 && skipped.Count == 0) return new([], $"本补丁没有{label}相关容器更改。");
+        var entries = source.ListKnownMediaLocations(kind == PatchMediaKind.Model ? "model" : "audio", ranges, token)
+            .Select(item => new PatchMediaEntry(item.Path, item.Container, item.Offset)).ToArray();
+        return new(entries, $"{entries.Length:N0} 个已知路径{label}写入候选。" + KnownPathSummary(ranges.Count, skipped));
+    }
+
+    internal static string KnownPathSummary(int verifiedContainers, IReadOnlyList<string> skipped) =>
+        (verifiedContainers == 0 ? (skipped.Count == 0 ? "本补丁没有相关数据容器更改。" : "没有可确认目标索引的更改容器。") : KnownPathEvidence) +
+        (skipped.Count == 0 ? "" : $"另有 {skipped.Count:N0} 个容器缺少目标 index 摘要，已跳过，需手动完整扫描。");
+
     private const string SqPackPrefix = "game/sqpack/";
 
     public static IReadOnlyList<string> Containers(LoadedPatch patch, PatchMediaKind kind)
@@ -46,7 +79,7 @@ public static class PatchMediaScanner
         progress?.Report("正在筛选索引中的" + label + "资源…");
         var locations = model
             ? source.ListModelLocations(token, containers, progress, includeRange: (path, start, end) => Overlaps(ranges, path, start, end)).Select(item => (item.Path, item.Container, item.Offset, item.End))
-            : source.ListAudioLocations(token, containers).Select(item => (item.Path, item.Container, item.Offset, item.End));
+            : source.ListAudioLocations(token, containers, progress, includeRange: (path, start, end) => Overlaps(ranges, path, start, end)).Select(item => (item.Path, item.Container, item.Offset, item.End));
         var entries = locations.Where(item => Overlaps(ranges, item.Container, item.Offset, item.End))
             .OrderBy(item => item.Path, StringComparer.OrdinalIgnoreCase)
             .Select(item => new PatchMediaEntry(item.Path, item.Container, item.Offset)).ToArray();
@@ -54,13 +87,27 @@ public static class PatchMediaScanner
     }
 
     internal static Dictionary<string, IReadOnlyList<VcdiffRanges.Range>> ReadRanges(LocalGameSource source, LoadedPatch patch,
-        IEnumerable<string> archivePaths, string[] categories, CancellationToken token, IProgress<string>? progress, string? selectedContainer = null)
+        IEnumerable<string> archivePaths, string[] categories, CancellationToken token, IProgress<string>? progress, string? selectedContainer = null, bool verifyContainers = true, List<string>? skippedContainers = null)
     {
+        token.ThrowIfCancellationRequested();
         var resources = patch.Resources.Where(resource => categories.Contains(resource.Category) && resource.Path.StartsWith(SqPackPrefix, StringComparison.OrdinalIgnoreCase)).ToArray();
         var containers = resources.Where(resource => IsContainer(resource) && (selectedContainer == null ||
             resource.Path[SqPackPrefix.Length..].Equals(selectedContainer, StringComparison.OrdinalIgnoreCase))).ToArray();
         var ranges = new Dictionary<string, IReadOnlyList<VcdiffRanges.Range>>(StringComparer.OrdinalIgnoreCase);
         if (containers.Length == 0) return ranges;
+        // 快速路径依赖 index 的目录哈希；缺少对应目标摘要的容器交给手动完整扫描。
+        if (!verifyContainers)
+        {
+            containers = containers.Where(resource =>
+            {
+                var index = resource.Path[..resource.Path.LastIndexOf(".dat", StringComparison.OrdinalIgnoreCase)] + ".index";
+                if (resources.Any(candidate => candidate.Path.Equals(index, StringComparison.OrdinalIgnoreCase))) return true;
+                skippedContainers?.Add(resource.Path[SqPackPrefix.Length..]);
+                return false;
+            }).ToArray();
+            if (containers.Length == 0) return ranges;
+        }
+
         var indexNames = containers.SelectMany(resource =>
         {
             var baseName = resource.Path[..resource.Path.LastIndexOf(".dat", StringComparison.OrdinalIgnoreCase)];
@@ -79,7 +126,8 @@ public static class PatchMediaScanner
                 token.ThrowIfCancellationRequested();
                 if (!resource.Available) throw new InvalidDataException("补丁缺少分卷：" + resource.Entry);
                 var relative = resource.Path[SqPackPrefix.Length..];
-                var length = VerifyTarget(source, resource, relative, token, progress);
+                var length = verifyContainers ? VerifyTarget(source, resource, relative, token, progress)
+                    : new FileInfo(Workspace.Within(source.SqPackPath, relative)).Length;
                 var entry = archives.SelectMany(archive => archive.Entries).FirstOrDefault(candidate =>
                     candidate.FullName.Replace('\\', '/').Equals(resource.Entry, StringComparison.OrdinalIgnoreCase))
                     ?? throw new FileNotFoundException("找不到差分：" + resource.Entry);

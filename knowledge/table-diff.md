@@ -49,7 +49,7 @@ CHS 7.58 的本地抽查验证了 `Action` 对 `ActionCategory` 的行号引用�
 
 悬浮窗用 `目标表#行号` 显示引用，例如 `ModelChara#5336`。目标有可用名称时追加名称，有已验证的图标列时按 100% 原始像素显示图标，点击可打开本地图片页。Diff 的旧、新侧分别从各自的表数据取名称和图标编号，纹理从本地 SqPack 读取。 [关联解析器](../src/FFXIVPatchParser/RelationResolver.cs) · [Diff 关联界面](../src/FFXIVPatchParser.Desktop/MainWindow.Relations.cs)
 
-本地表格的关联模式也在引用名称前显示目标图标，例如 `AozAction` 中「千针刺」的 `Action` 引用。`Action` 的 Icon 列只显示图标，单击后可看原始编号。表格默认按表头定宽，右上角的「按内容调整列宽」以当前页各列的最宽单元格为准。 [本地表格展示](../src/FFXIVPatchParser.Desktop/SqPackBrowser.TablePresentation.cs)
+本地表格的关联模式也在引用名称前显示目标图标，例如 `AozAction` 中「千针刺」的 `Action` 引用。`Action` 的 Icon 列只显示图标，单击后可看原始编号。本地表格和 Diff 都随滚动分批加载行，向右滚动可查看全部列。默认列宽取表头和已加载行中最宽的单元格。手动调整后可点「重置列宽」恢复。 [本地表格展示](../src/FFXIVPatchParser.Desktop/SqPackBrowser.TablePresentation.cs)
 
 `ReplaceAction` 的 `Action` 直接连到 `Action` 表。`Param1` 根据 `Type1` 选择目标，例如类型 2 连到 `Status`，类型 3 连到 `Trait`。国服 7.58 的 `1.0`、`1.5`、`1.7` 子行分别可查到 `Action#28`「钢铁信念」、`Status#3827`「祈告剑预备」和 `Trait#565`「安魂祈祷精通」。三个目标各有自己的 Icon 字段。 [ReplaceAction 定义](https://github.com/xivapi/SaintCoinach/blob/0b22b78f97951bb66bfa78fb561aa4c7bf7af7cd/SaintCoinach/Definitions/ReplaceAction.json)
 

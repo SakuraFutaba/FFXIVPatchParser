@@ -44,7 +44,7 @@ python ./scripts/Verify-Snapshot.py tmp/snapshots/verification `
 
 在国服 7.58 上复跑以上命令，共导出 4 张表、120,588 条记录，其中 `GilShopItem` 为子行表。快照校验通过，导出前后输入文件的指纹一致。
 
-需要覆盖特殊情况时，加一张空表和 `CharaMakeType` 这样的宽表。空表用 EXH 核对列定义。国服 7.58 的 `CharaMakeType` 有 3,536 列，可检查列分页和字段定义匹配是否保留完整列序。 [Excel 表格与 Raw 快照](excel.md)
+需要覆盖特殊情况时，加一张空表和 `CharaMakeType` 这样的宽表。空表用 EXH 核对列定义。国服 7.58 的 `CharaMakeType` 有 3,536 列，可通过横向滚动检查字段定义匹配后是否保留完整列序。 [Excel 表格与 Raw 快照](excel.md)
 
 ### 检查资源预览
 

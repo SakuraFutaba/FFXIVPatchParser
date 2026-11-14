@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.IO.Compression;
+using System.Globalization;
 using System.Runtime.InteropServices;
 using Lumina;
 using Lumina.Data;
@@ -29,7 +30,8 @@ public sealed partial class LocalGameSource
             return GetMusicNames(token).Values.Order(StringComparer.OrdinalIgnoreCase).ToArray();
     }
 
-    public IReadOnlyList<SqPackAudioLocation> ListAudioLocations(CancellationToken token = default, IReadOnlySet<string>? containers = null)
+    public IReadOnlyList<SqPackAudioLocation> ListAudioLocations(CancellationToken token = default, IReadOnlySet<string>? containers = null,
+        IProgress<string>? progress = null, Func<string, long, long, bool>? includeRange = null)
     {
         lock (gate)
         {
@@ -58,11 +60,12 @@ public sealed partial class LocalGameSource
                             if (wanted is not null && !wanted.Contains(container)) continue;
                             if (!audioLocations.TryGetValue(container, out var entries))
                             {
+                                progress?.Report("正在扫描音频容器 · " + container);
                                 var ordered = group.OrderBy(entry => entry.Key.Offset).ToArray();
-                                entries = ScanAudioContainer(pack, container, ordered, GetMusicNames(token), token);
-                                audioLocations.Add(container, entries);
+                                entries = ScanAudioContainer(pack, container, ordered, GetMusicNames(token), token, includeRange);
+                                if (includeRange is null) audioLocations.Add(container, entries);
                             }
-                            result.AddRange(entries);
+                            result.AddRange(includeRange is null ? entries : entries.Where(item => includeRange(item.Container, item.Offset, item.End)));
                         }
                     }
                 }
@@ -85,12 +88,8 @@ public sealed partial class LocalGameSource
             {
                 if (path.StartsWith("sqpack:", StringComparison.Ordinal))
                 {
-                    var separator = path.IndexOf('@');
-                    if (!audioAddresses.TryGetValue(path, out var address) && separator > 7)
-                    {
-                        ListAudioLocations(token, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { path[7..separator] });
-                        audioAddresses.TryGetValue(path, out address);
-                    }
+                    if (!audioAddresses.TryGetValue(path, out var address))
+                        address = ResolveAudioAddress(path, token);
                     file = address.Pack?.ReadFile<ScdFile>(address.Offset);
                 }
                 else file = game.GetFile<ScdFile>(path);
@@ -130,6 +129,33 @@ public sealed partial class LocalGameSource
         }
     }
 
+    private (SqPack Pack, long Offset) ResolveAudioAddress(string path, CancellationToken token)
+    {
+        var separator = path.IndexOf('@');
+        var hashSeparator = path.IndexOf('#', Math.Max(separator, 0));
+        if (separator <= 7 || hashSeparator <= separator + 1 || hashSeparator >= path.Length - 5 ||
+            !long.TryParse(path.AsSpan(separator + 1, hashSeparator - separator - 1), NumberStyles.HexNumber,
+                CultureInfo.InvariantCulture, out var expectedOffset) || expectedOffset < 0 ||
+            !ulong.TryParse(path.AsSpan(hashSeparator + 1, path.Length - hashSeparator - 5), NumberStyles.HexNumber,
+                CultureInfo.InvariantCulture, out var hash))
+            throw new ArgumentException("无效的 SqPack 音频地址。", nameof(path));
+        var container = path[7..separator];
+        foreach (var repo in game.Repositories.Values)
+        foreach (var categories in repo.Categories.Values)
+        foreach (var category in categories)
+        {
+            token.ThrowIfCancellationRequested();
+            if (!category.TryGetFileDatOffset(hash, out var dat, out var offset) || offset != expectedOffset ||
+                category.GetDat(dat) is not { } pack) continue;
+            var candidate = Path.GetRelativePath(SqPackPath, pack.FullName).Replace('\\', '/');
+            if (!container.Equals(candidate, StringComparison.OrdinalIgnoreCase)) continue;
+            var address = (pack, offset);
+            audioAddresses[path] = address;
+            return address;
+        }
+        throw new FileNotFoundException("当前 SqPack 索引中没有此音频地址：" + path);
+    }
+
     private Dictionary<ulong, string> GetMusicNames(CancellationToken token)
     {
         if (musicNames is not null) return musicNames;
@@ -155,7 +181,7 @@ public sealed partial class LocalGameSource
             }
             catch (Exception ex) when (ex is IOException or InvalidDataException or NotSupportedException or KeyNotFoundException)
             {
-                // The SCD scan also works when the game installation has no complete BGM sheet.
+                // 安装目录缺少完整 BGM 表时，仍可手动扫描 SCD。
             }
         }
         musicNames = result;
@@ -163,7 +189,7 @@ public sealed partial class LocalGameSource
     }
 
     private List<SqPackAudioLocation> ScanAudioContainer(SqPack pack, string container,
-        KeyValuePair<(byte Dat, long Offset), ulong>[] ordered, Dictionary<ulong, string> knownNames, CancellationToken token)
+        KeyValuePair<(byte Dat, long Offset), ulong>[] ordered, Dictionary<ulong, string> knownNames, CancellationToken token, Func<string, long, long, bool>? includeRange)
     {
         using var stream = new FileStream(pack.FullName, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, FileOptions.RandomAccess);
         using var reader = new BinaryReader(stream);
@@ -174,6 +200,7 @@ public sealed partial class LocalGameSource
             token.ThrowIfCancellationRequested();
             var offset = ordered[i].Key.Offset;
             var end = i + 1 < ordered.Length ? ordered[i + 1].Key.Offset : stream.Length;
+            if (includeRange is not null && !includeRange(container, offset, end)) continue;
             if (!HasScdMagic(reader, offset, end)) continue;
             var hash = ordered[i].Value;
             var path = knownNames.GetValueOrDefault(hash) ?? $"sqpack:{container}@{offset:x}#{hash:x16}.scd";

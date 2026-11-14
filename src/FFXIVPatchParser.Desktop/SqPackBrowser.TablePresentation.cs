@@ -17,7 +17,6 @@ public partial class SqPackBrowser
     private readonly Dictionary<string, BitmapSource?> tableIconCache = new(StringComparer.Ordinal);
     private CancellationTokenSource? tableIconCancellation;
     private Task tableIconTask = Task.CompletedTask;
-    private bool fitTableColumns;
 
     internal async Task<BitmapSource?> ReadRelationIconAsync(string path, CancellationToken token)
     {
@@ -58,24 +57,20 @@ public partial class SqPackBrowser
     private bool IconOnlyColumn(TablePage page, int index) => showRelations &&
         (page.Columns[index].Name == "Icon" || page.Rows.Any(row => row.Related[index]?.Relation.IconPath != null));
 
-    private void ToggleTableColumnSizing(object sender, RoutedEventArgs e)
+    private void ResetTableColumnSizing(object sender, RoutedEventArgs e)
     {
         if (tablePage is not { } page) return;
-        fitTableColumns = !fitTableColumns;
-        FitTableColumnsButton.Content = fitTableColumns ? "按表头调整列宽" : "按内容调整列宽";
+
         ApplyTableColumnSizing(page);
     }
 
     private void ApplyTableColumnSizing(TablePage page)
     {
-        var start = columnPage * ColumnsPerPage;
-        var iconOnly = fitTableColumns
-            ? Enumerable.Range(start, TableGrid.Columns.Count - 1).Select(index => IconOnlyColumn(page, index)).ToArray()
-            : [];
-        TableColumnSizing.Apply(TableGrid, page.Rows, fitTableColumns, (row, displayIndex) =>
+        var iconOnly = Enumerable.Range(0, TableGrid.Columns.Count - 1).Select(index => IconOnlyColumn(page, index)).ToArray();
+        TableColumnSizing.Apply(TableGrid, page.Rows, (row, displayIndex) =>
         {
             if (displayIndex == 0) return (row.Key, 0, false);
-            var index = start + displayIndex - 1;
+            var index = displayIndex - 1;
             var related = row.Related[index];
             var showText = !iconOnly[displayIndex - 1];
             var iconWidth = related?.PreviewIconPath == null ? 0 : TableIconSize + (showText ? TableIconSpacing : 0);
@@ -136,7 +131,7 @@ public partial class SqPackBrowser
     {
         tableIconCancellation?.Cancel();
         if (!showRelations || !TableGrid.IsVisible || closing || tablePage is not { } page || game is not { } source) return;
-        var groups = page.Rows.SelectMany(row => row.Related.Skip(columnPage * ColumnsPerPage).Take(ColumnsPerPage))
+        var groups = page.Rows.SelectMany(row => row.Related)
             .OfType<TableRelatedCell>().Where(cell => cell.PreviewIconPath != null)
             .GroupBy(cell => cell.PreviewIconPath!, StringComparer.Ordinal).ToArray();
         if (groups.Length == 0) return;

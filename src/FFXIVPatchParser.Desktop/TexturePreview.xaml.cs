@@ -40,9 +40,7 @@ public partial class TexturePreview : UserControl
         ResetView(fitToWindow: false);
     }
 
-    private void FitImage(object sender, RoutedEventArgs e) => ResetView(fitToWindow: true);
-
-    private void ShowActualSize(object sender, RoutedEventArgs e) => ResetView(fitToWindow: false);
+    private void ToggleZoom(object sender, RoutedEventArgs e) => ResetView(fitToWindow: !fit);
 
     private double FitZoom(DpiScale dpi)
     {
@@ -118,6 +116,8 @@ public partial class TexturePreview : UserControl
 
     private void UpdateView(DpiScale dpi)
     {
+        ToggleZoomButton.Content = fit ? "100%" : "适应窗口";
+        ToggleZoomButton.ToolTip = fit ? "以原始像素大小居中显示" : "适应窗口并居中";
         if (bitmap is null)
         {
             ImageInfo.Text = "选择一张图片以预览";

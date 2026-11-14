@@ -18,8 +18,6 @@ public partial class SqPackBrowser
             imageCatalogCancellation is not { IsCancellationRequested: false }) _ = LoadImageCatalog();
     }
 
-    private async void ReadIconCatalog(object sender, RoutedEventArgs e) => await LoadImageCatalog();
-
     private async Task LoadImageCatalog()
     {
         if (game is not { } source || closing) return;

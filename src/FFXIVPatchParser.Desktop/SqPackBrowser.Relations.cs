@@ -330,10 +330,7 @@ public partial class SqPackBrowser
 
             selectedTable = name;
             columnFilters.Clear();
-            rowOffsets.Clear();
-            for (var index = 0; index <= pageIndex; index++) rowOffsets.Add(index * RowsPerPage);
-            rowPage = pageIndex;
-            columnPage = Math.Max(0, columnPosition) / ColumnsPerPage;
+            firstTableOffset = pageIndex * RowsPerPage;
             tablePage = page;
             RenderTable();
             return $"已定位 {name} · Row {key}";
@@ -342,7 +339,7 @@ public partial class SqPackBrowser
 
         await Dispatcher.InvokeAsync(() =>
         {
-            var visibleColumn = columnPosition < 0 ? 0 : columnPosition % ColumnsPerPage + 1;
+            var visibleColumn = columnPosition < 0 ? 0 : columnPosition + 1;
             if (!TableGrid.Items.Contains(targetRow) || visibleColumn >= TableGrid.Columns.Count) return;
             SelectTableTreeItem(name);
             SelectTableCell(targetRow, visibleColumn, true);

@@ -16,24 +16,52 @@ public partial class ModelPreview
     private CancellationTokenSource? namesDownload;
     private CancellationTokenSource? namedSelection;
     private NamedModelEntry? selectedNamedModel;
+    private bool changingCatalogueMode;
     public event EventHandler<ModelTableLinkEventArgs>? RelatedTableRequested;
 
     private async void ModelModeChanged(object sender, SelectionChangedEventArgs e)
     {
-        if (ModelSearch == null || ScanAllModels == null || NpcNamesButton == null) return;
-        scanCancellation?.Cancel();
+        if (changingCatalogueMode || ModelSearch == null || NpcNamesButton == null) return;
+        await ShowCatalogueMode();
+    }
+
+    private async Task ShowCatalogueMode()
+    {
         filterCancellation?.Cancel();
         namedSelection?.Cancel();
         var raw = ModelMode.SelectedIndex == 2;
-        ScanAllModels.Visibility = raw ? Visibility.Visible : Visibility.Collapsed;
-        if (ModelPathsButton != null) ModelPathsButton.Visibility = raw ? Visibility.Visible : Visibility.Collapsed;
         NpcNamesButton.Visibility = raw ? Visibility.Collapsed : Visibility.Visible;
-        ScanButton.Content = raw ? "扫描模型" : "读取目录";
         ModelTree.ItemsSource = null;
         ModelSearch.IsEnabled = raw ? models != null : namedModels != null;
-        BrowserStatus.Text = source == null ? "请选择游戏目录" : raw ? "扫描容器可找到未列入表的模型" : "尚未读取";
+        BrowserStatus.Text = source == null ? "请选择游戏目录" : raw ? "点击「扫描资源索引」查找目录之外的模型" : "尚未读取";
         if (ModelSearch.IsEnabled) await ApplyModelFilter();
         else StartCatalogueIfVisible();
+    }
+
+    private async Task SelectCatalogueMode(int index)
+    {
+        changingCatalogueMode = true;
+        try { ModelMode.SelectedIndex = index; }
+        finally { changingCatalogueMode = false; }
+        await ShowCatalogueMode();
+    }
+
+    public async Task<string> ScanUnknownAsync(CancellationToken token, IProgress<string>? progress)
+    {
+        if (source is not { } game) return "请选择游戏目录";
+        scanCancellation?.Cancel();
+        using var current = CancellationTokenSource.CreateLinkedTokenSource(token);
+        scanCancellation = current;
+        var charactersOnly = ScanAllModels.IsChecked != true;
+        try
+        {
+            var result = await Task.Run(() => game.ListModelLocations(current.Token, progress: progress, charactersOnly: charactersOnly), current.Token);
+            current.Token.ThrowIfCancellationRequested();
+            models = result;
+            await SelectCatalogueMode(2);
+            return $"已扫描 {result.Count:N0} 个模型，含 {result.Count(model => model.Path.StartsWith("sqpack:", StringComparison.Ordinal)):N0} 个路径未识别模型";
+        }
+        finally { if (scanCancellation == current) scanCancellation = null; }
     }
 
     private void StartCatalogueIfVisible()
@@ -57,9 +85,12 @@ public partial class ModelPreview
             var count = await Task.Run(() => game.ImportModelPaths(dialog.FileName));
             if (!ReferenceEquals(source, game)) return;
             models = null;
-            ModelTree.ItemsSource = null;
-            ModelSearch.IsEnabled = false;
-            BrowserStatus.Text = $"合并后共 {count:N0} 条候选路径；再次扫描后按本地索引匹配。";
+            if (ModelMode.SelectedIndex == 2)
+            {
+                ModelTree.ItemsSource = null;
+                ModelSearch.IsEnabled = false;
+            }
+            BrowserStatus.Text = $"合并后共 {count:N0} 条候选路径。点击「扫描资源索引」按本地索引匹配。";
         }
         catch (Exception ex) { BrowserStatus.Text = "导入模型路径失败 · " + ex.Message; }
         finally { ModelPathsButton.IsEnabled = true; }

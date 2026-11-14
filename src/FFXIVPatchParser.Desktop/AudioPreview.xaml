@@ -1,30 +1,44 @@
 <UserControl x:Class="FFXIVPatchParser.Desktop.AudioPreview"
  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+ xmlns:local="clr-namespace:FFXIVPatchParser.Desktop"
  Loaded="PreviewLoaded" Unloaded="PreviewUnloaded" IsVisibleChanged="PreviewVisibilityChanged">
-  <Border Background="White" BorderBrush="#E4E7EC" BorderThickness="1" CornerRadius="6" Padding="12">
-    <StackPanel>
-      <DockPanel x:Name="Browser" Margin="0,0,0,12">
-        <Button DockPanel.Dock="Right" Content="打开" Click="OpenEnteredPath" Margin="8,0,0,0"/>
-        <ComboBox x:Name="AudioPath" IsEditable="True" StaysOpenOnEdit="True" KeyDown="EnterPath"
-                  AutomationProperties.Name="SqPack 音频路径" ToolTip="选择背景音乐或输入 .scd 路径"
-                  VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling"/>
+  <UserControl.Resources>
+    <HierarchicalDataTemplate x:Key="AudioTreeLabel" ItemsSource="{Binding Children}">
+      <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" ToolTip="{Binding FullPath}"/>
+    </HierarchicalDataTemplate>
+  </UserControl.Resources>
+  <Grid>
+    <Grid.ColumnDefinitions><ColumnDefinition x:Name="BrowserColumn" Width="318"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+    <DockPanel x:Name="Browser" Margin="0,0,8,0">
+      <TextBox x:Name="AudioSearch" DockPanel.Dock="Top" Tag="筛选音频路径…" Margin="0,0,0,6" TextChanged="FilterAudio"
+               AutomationProperties.Name="筛选音频路径" ToolTip="筛选目录和文件名"/>
+      <TextBlock x:Name="CatalogStatus" DockPanel.Dock="Bottom" TextWrapping="Wrap" Foreground="{StaticResource Muted}" Margin="0,6,0,0"/>
+      <TreeView x:Name="AudioTree" Style="{StaticResource CompactPathTree}" SelectedItemChanged="SelectAudio" ItemTemplate="{StaticResource AudioTreeLabel}"/>
+    </DockPanel>
+    <DockPanel Grid.Column="1">
+      <DockPanel x:Name="PathInput" DockPanel.Dock="Top" Margin="0,0,0,6">
+        <Button DockPanel.Dock="Right" Content="打开 .scd" Click="OpenEnteredPath" Margin="6,0,0,0"/>
+        <TextBox x:Name="AudioPath" Tag="输入 SqPack 内的 .scd 路径…" KeyDown="EnterPath" AutomationProperties.Name="SqPack 音频路径"/>
       </DockPanel>
+      <Border VerticalAlignment="Top" Background="White" BorderBrush="#E4E7EC" BorderThickness="1" CornerRadius="6" Padding="12">
+    <StackPanel>
       <TextBlock x:Name="AudioDetails" Text="选择 .scd 文件以预览" TextWrapping="Wrap" Margin="0,0,0,8"/>
       <WrapPanel Margin="0,0,0,6">
-        <Button x:Name="PlayButton" Content="播放" Click="PlayAudio" IsEnabled="False"/>
-        <Button x:Name="PauseButton" Content="暂停" Click="PauseAudio" IsEnabled="False"/>
-        <Button x:Name="StopButton" Content="停止" Click="StopAudio" IsEnabled="False"/>
+        <local:PlayPauseButton x:Name="PlayButton" Style="{StaticResource MediaPlaybackButton}" Click="PlayAudio" IsEnabled="False"/>
+        <Button x:Name="StopButton" Style="{StaticResource StopPlaybackButton}" Click="StopAudio" IsEnabled="False"/>
         <Button x:Name="SaveButton" Content="导出音轨" Click="SaveAudio" IsEnabled="False"/>
         <ComboBox x:Name="TrackSelector" MinWidth="86" IsEnabled="False" SelectionChanged="SelectTrack"
                   AutomationProperties.Name="音轨"/>
       </WrapPanel>
       <DockPanel>
         <TextBlock x:Name="TimeLabel" DockPanel.Dock="Right" Text="0:00" Margin="10,0,0,0" VerticalAlignment="Center"/>
-        <Slider x:Name="PositionSlider" Minimum="0" Maximum="1" IsEnabled="False" ValueChanged="SeekAudio"
+        <Slider x:Name="PositionSlider" Minimum="0" Maximum="1" IsEnabled="False" IsMoveToPointEnabled="True" ValueChanged="SeekAudio"
                 AutomationProperties.Name="播放进度"/>
       </DockPanel>
       <TextBlock x:Name="Status" TextWrapping="Wrap" Foreground="#667085" Margin="0,6,0,0"/>
     </StackPanel>
-  </Border>
+      </Border>
+    </DockPanel>
+  </Grid>
 </UserControl>

@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using System.Diagnostics;
 using System.Numerics;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -11,10 +12,59 @@ public sealed record ModelAnimationClip(string ModelPath, string PapPath, int Sl
 
 public sealed partial class LocalGameSource
 {
+    private const long AnimationCacheBudget = 64L * 1024 * 1024;
+    private readonly SemaphoreSlim animationBakeGate = new(1, 1);
+    private readonly LinkedList<(string Key, ModelAnimationClip Clip, long Bytes)> animationClips = new();
+    private long animationClipBytes;
+
+    /// <summary>在后台采样并缓存最近使用的动作，重复选择时复用骨骼帧。</summary>
+    public Task<ModelAnimationClip> BakeModelAnimationAsync(string modelPath, string papPath, int slot,
+        string godbertDirectory, CancellationToken token = default, int samplingRate = 60, int? previewVertexCount = null)
+    {
+        if (previewVertexCount is <= 0) throw new ArgumentOutOfRangeException(nameof(previewVertexCount));
+        if (samplingRate is not (60 or 120)) throw new ArgumentOutOfRangeException(nameof(samplingRate));
+        return Task.Run(async () =>
+        {
+            await animationBakeGate.WaitAsync(token);
+            try
+            {
+                token.ThrowIfCancellationRequested();
+                var dll = new FileInfo(Path.GetFullPath(Path.Combine(godbertDirectory, "hkAnimationInterop.dll")));
+                if (!dll.Exists) throw new FileNotFoundException("所选目录没有 hkAnimationInterop.dll。", dll.FullName);
+                var key = $"{modelPath}|{papPath}|{slot}|{samplingRate}|{previewVertexCount}|{dll.FullName}|{dll.Length}|{dll.LastWriteTimeUtc.Ticks}";
+                for (var node = animationClips.First; node != null; node = node.Next)
+                {
+                    if (node.Value.Key != key) continue;
+                    animationClips.Remove(node);
+                    animationClips.AddFirst(node);
+                    return node.Value.Clip;
+                }
+                var clip = await BakeModelAnimationCoreAsync(modelPath, papPath, slot, godbertDirectory, token, samplingRate, previewVertexCount);
+                token.ThrowIfCancellationRequested();
+                // 计入矩阵、数组及名称的估计开销；限制条目数，避免大量短片段积累。
+                var bytes = 256L + clip.Frames.Length * (32L + clip.BoneNames.Length * 64L)
+                    + clip.BoneNames.Sum(name => 32L + name.Length * 2L);
+                if (bytes <= AnimationCacheBudget)
+                {
+                    while (animationClips.Last is { } last &&
+                        (animationClipBytes + bytes > AnimationCacheBudget || animationClips.Count >= 16))
+                    {
+                        animationClipBytes -= last.Value.Bytes;
+                        animationClips.RemoveLast();
+                    }
+                    animationClips.AddFirst((key, clip, bytes));
+                    animationClipBytes += bytes;
+                }
+                return clip;
+            }
+            finally { animationBakeGate.Release(); }
+        }, token);
+    }
+
     /// <summary>Samples monster PAP poses in an isolated x86 process using the user's Godbert installation.
     /// Native DLLs are loaded in place, never copied or distributed.</summary>
-    public async Task<ModelAnimationClip> BakeModelAnimationAsync(string modelPath, string papPath, int slot,
-        string godbertDirectory, CancellationToken token = default)
+    private async Task<ModelAnimationClip> BakeModelAnimationCoreAsync(string modelPath, string papPath, int slot,
+        string godbertDirectory, CancellationToken token, int samplingRate, int? previewVertexCount)
     {
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Godbert 动作解码需要 Windows。");
         var match = Regex.Match(modelPath, @"^chara/monster/(m\d{4})/obj/body/b\d{4}/model/", RegexOptions.CultureInvariant);
@@ -22,8 +72,6 @@ public sealed partial class LocalGameSource
         var id = match.Groups[1].Value;
         if (!papPath.StartsWith($"chara/monster/{id}/animation/", StringComparison.Ordinal))
             throw new NotSupportedException("PAP 必须属于当前怪物模型。");
-        var metadata = ReadAnimationMetadata(papPath, token);
-        if (!metadata.Slots.Any(s => s.Index == slot)) throw new ArgumentOutOfRangeException(nameof(slot));
         var dll = Path.GetFullPath(Path.Combine(godbertDirectory, "hkAnimationInterop.dll"));
         if (!File.Exists(dll)) throw new FileNotFoundException("所选目录没有 hkAnimationInterop.dll。", dll);
         var powershell = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "SysWOW64", "WindowsPowerShell", "v1.0", "powershell.exe");
@@ -36,6 +84,8 @@ public sealed partial class LocalGameSource
             skeleton = (game.GetFile(skeletonPath) ?? throw new FileNotFoundException("缺少怪物骨架：" + skeletonPath)).Data;
             pap = (game.GetFile(papPath) ?? throw new FileNotFoundException(papPath)).Data;
         }
+        var metadata = ParseAnimationMetadata(pap, papPath, token);
+        if (!metadata.Slots.Any(s => s.Index == slot)) throw new ArgumentOutOfRangeException(nameof(slot));
         if (skeleton.Length < 16 || BinaryPrimitives.ReadUInt32LittleEndian(skeleton) != 0x736b6c62)
             throw new InvalidDataException("SKLB 文件头无效。");
         var version = Encoding.ASCII.GetString(skeleton, 4, 4);
@@ -53,18 +103,31 @@ public sealed partial class LocalGameSource
         if (!work.StartsWith(cacheRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException("动作临时目录不在工作区内。");
         Directory.CreateDirectory(work);
+        var helpers = Path.Combine(cacheRoot, "helpers");
+        Directory.CreateDirectory(helpers);
+        var helper = Path.Combine(helpers, Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(HavokBakeScript))) + ".exe");
         try
         {
         var skelFile = Path.Combine(work, "skeleton.hkx"); var animFile = Path.Combine(work, "animation.hkx");
         var output = Path.Combine(work, "poses.bin");
         await File.WriteAllBytesAsync(skelFile, skeleton[skeletonOffset..], token);
         await File.WriteAllBytesAsync(animFile, pap[havokStart..havokEnd], token);
-        var start = new ProcessStartInfo(powershell) { UseShellExecute = false, CreateNoWindow = true,
+        var compiledHelperExists = File.Exists(helper);
+        var start = new ProcessStartInfo(compiledHelperExists ? helper : powershell) { UseShellExecute = false, CreateNoWindow = true,
             RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = work };
-        foreach (var arg in new[] { "-NoProfile", "-NonInteractive", "-EncodedCommand", Convert.ToBase64String(Encoding.Unicode.GetBytes(HavokBakeScript)) }) start.ArgumentList.Add(arg);
+        if (!compiledHelperExists)
+        {
+            foreach (var arg in new[] { "-NoProfile", "-NonInteractive", "-EncodedCommand", Convert.ToBase64String(Encoding.Unicode.GetBytes(HavokBakeScript)) })
+                start.ArgumentList.Add(arg);
+        }
         start.Environment["FFXIV_HK_DLL"] = dll;
         start.Environment["FFXIV_HK_SKEL"] = skelFile; start.Environment["FFXIV_HK_ANIM"] = animFile;
         start.Environment["FFXIV_HK_OUTPUT"] = output; start.Environment["FFXIV_HK_SLOT"] = slot.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        start.Environment["FFXIV_HK_HELPER"] = helper;
+        start.Environment["FFXIV_HK_FPS"] = samplingRate.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        // 仅预览策略允许按完整顶点缓存预算降到 60 Hz，显式采样调用保留指定频率。
+        start.Environment["FFXIV_HK_FRAME_BUDGET"] = previewVertexCount is { } vertices
+            ? (64L * 1024 * 1024 / (vertices * 24L)).ToString(System.Globalization.CultureInfo.InvariantCulture) : "-1";
         start.Environment["TEMP"] = work; start.Environment["TMP"] = work;
         using var process = Process.Start(start) ?? throw new InvalidOperationException("无法启动动作解码进程。");
         var stdout = process.StandardOutput.ReadToEndAsync(token); var stderr = process.StandardError.ReadToEndAsync(token);
@@ -83,7 +146,7 @@ public sealed partial class LocalGameSource
             throw new InvalidOperationException($"Godbert x86 动作解码失败（退出码 {process.ExitCode}）：{diagnostic}");
         using var reader = new BinaryReader(File.OpenRead(output));
         var bones = reader.ReadInt32(); var frames = reader.ReadInt32(); var duration = reader.ReadSingle(); var fps = reader.ReadSingle();
-        if (bones is < 1 or > 1024 || frames is < 1 or > 3600 || (long)bones * frames > 1_000_000 || !float.IsFinite(duration) || duration <= 0)
+        if (bones is < 1 or > 1024 || frames is < 1 or > 14400 || (long)bones * frames > 1_000_000 || !float.IsFinite(duration) || duration <= 0 || (fps != samplingRate && !(samplingRate == 120 && previewVertexCount != null && fps == 60)))
             throw new InvalidDataException("解码后的动作尺寸无效。");
         var names = new string[bones]; var parents = new int[bones]; var reference = new Matrix4x4[bones];
         for (var b = 0; b < bones; b++) { names[b] = reader.ReadString(); parents[b] = reader.ReadInt32(); reference[b] = ReadHavokTransform(reader); }
@@ -117,7 +180,7 @@ public sealed partial class LocalGameSource
 
     private static Matrix4x4 ReadHavokTransform(BinaryReader reader)
     {
-        var v = new float[12];
+        Span<float> v = stackalloc float[12];
         for (var i = 0; i < v.Length; i++) { v[i] = reader.ReadSingle(); if (!float.IsFinite(v[i])) throw new InvalidDataException("动作变换含非有限数值。"); }
         return Matrix4x4.CreateScale(v[4], v[5], v[6])
             * Matrix4x4.CreateFromQuaternion(new Quaternion(v[8], v[9], v[10], v[11]))
@@ -147,6 +210,10 @@ public static class BakeHavok {
  [UnmanagedFunctionPointer(CallingConvention.Cdecl)] delegate int Pose(IntPtr p,float time,[In,Out] float[] transforms);
  static IntPtr library;
  static T Fn<T>(string name) where T:class { var p=GetProcAddress(library,name);if(p==IntPtr.Zero)throw new Exception("Missing native export: "+name);return Marshal.GetDelegateForFunctionPointer(p,typeof(T)) as T; }
+ public static int Main() {
+  try { Run(); return 0; }
+  catch(Exception ex) { Console.Error.WriteLine(ex); return 1; }
+ }
  public static void Run() {
   library=LoadLibraryW(Environment.GetEnvironmentVariable("FFXIV_HK_DLL"));
   if(library==IntPtr.Zero)throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(),"Cannot load Godbert x86 Havok DLL; check x86 VC++ 2012 runtime.");
@@ -163,7 +230,10 @@ public static class BakeHavok {
    int slot=int.Parse(Environment.GetEnvironmentVariable("FFXIV_HK_SLOT"));if(slot<0||slot>=Fn<Count>("getNumAnimations")(container))throw new Exception("Invalid clip slot");
    var clip=Fn<GetAnimation>("getAnimation")(container,slot);float duration=Fn<Duration>("getDuration")(clip);
    if(float.IsNaN(duration)||float.IsInfinity(duration)||duration<=0||duration>120)throw new Exception("Unsupported animation duration");
-   float fps=30;int frames=Math.Max(1,(int)Math.Ceiling(duration*fps));if((long)frames*bones>1000000)throw new Exception("Animation exceeds preview memory limit");
+   float fps=int.Parse(Environment.GetEnvironmentVariable("FFXIV_HK_FPS"));int frames=Math.Max(1,(int)Math.Ceiling(duration*fps));
+   long frameBudget=long.Parse(Environment.GetEnvironmentVariable("FFXIV_HK_FRAME_BUDGET"));
+   if(fps==120 && frameBudget>=0 && (frames>frameBudget || (long)frames*bones>1000000)) { fps=60;frames=Math.Max(1,(int)Math.Ceiling(duration*fps)); }
+   if((long)frames*bones>1000000)throw new Exception("Animation exceeds preview memory limit");
    using(var writer=new BinaryWriter(File.Create(Environment.GetEnvironmentVariable("FFXIV_HK_OUTPUT")))) {
     writer.Write(bones);writer.Write(frames);writer.Write(duration);writer.Write(fps);
     for(int b=0;b<bones;b++){writer.Write(names[b]);writer.Write(parents[b]);for(int j=0;j<12;j++)writer.Write(reference[b*12+j]);}
@@ -174,9 +244,22 @@ public static class BakeHavok {
  }
 }
 '@
-Add-Type -TypeDefinition $code
-[BakeHavok]::Run()
-exit 0
+$helper = $env:FFXIV_HK_HELPER
+if (!(Test-Path -LiteralPath $helper)) {
+ $compiled = Join-Path $env:TEMP 'helper.exe'
+ $parameters = New-Object System.CodeDom.Compiler.CompilerParameters
+ $parameters.CompilerOptions = '/platform:x86 /optimize+'
+ [void]$parameters.ReferencedAssemblies.Add('System.dll')
+ $parameters.GenerateExecutable = $true
+ $parameters.GenerateInMemory = $false
+ $parameters.OutputAssembly = $compiled
+ Add-Type -TypeDefinition $code -CompilerParameters $parameters
+ try { [System.IO.File]::Move($compiled, $helper) } catch [System.IO.IOException] {
+  if (!(Test-Path -LiteralPath $helper)) { throw }
+ }
+}
+& $helper
+exit $LASTEXITCODE
 } catch { [Console]::Error.WriteLine($_.Exception.ToString()); exit 1 }
 """;
 }

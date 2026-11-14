@@ -17,6 +17,7 @@ public partial class ModelPreview : UserControl
     private CancellationTokenSource? scanCancellation, filterCancellation, loadCancellation, textureCancellation;
     private CancellationTokenSource? actionDiscoveryCancellation, actionReadCancellation;
     private ResourceChoiceItem[]? actions;
+    private string? requestedActionPath;
     private PreviewScene? scene;
     private Point? dragPosition;
     private MouseButton dragButton;
@@ -26,7 +27,6 @@ public partial class ModelPreview : UserControl
     public ModelPreview()
     {
         InitializeComponent();
-        playbackTimer.Tick += PlaybackTick;
         SetSourceStatus();
         ResetCamera();
     }
@@ -53,6 +53,10 @@ public partial class ModelPreview : UserControl
         source = game;
         models = null;
         namedModels = null;
+        changingCatalogueMode = true;
+        try { ModelMode.SelectedIndex = 0; }
+        finally { changingCatalogueMode = false; }
+        NpcNamesButton.Visibility = Visibility.Visible;
         ModelTree.ItemsSource = null;
         ModelSearch.Clear();
         ModelSearch.IsEnabled = false;
@@ -64,10 +68,9 @@ public partial class ModelPreview : UserControl
 
     private void SetSourceStatus()
     {
-        ModelPath.IsEnabled = MaterialVariant.IsEnabled = ScanButton.IsEnabled = ScanAllModels.IsEnabled = source is not null;
+        ModelPath.IsEnabled = MaterialVariant.IsEnabled = ScanAllModels.IsEnabled = source is not null;
         UpdateLoadButton();
         NpcNamesButton.IsEnabled = source is not null;
-        ScanButton.Content = ModelMode.SelectedIndex == 2 ? "扫描模型" : "读取目录";
         BrowserStatus.Text = source is null ? "请选择游戏目录" : "尚未读取";
         EmptyViewport.Text = EmptyMessage;
         SetModelStatus("");
@@ -173,61 +176,41 @@ public partial class ModelPreview : UserControl
         else if (e.NewValue is PathTreeNode { Payload: NamedModelEntry named } node) await OpenNamedModel(named, node);
     }
 
-    private async void ScanModels(object sender, RoutedEventArgs e) => await ReadCatalogue(refresh: true);
-
     private async Task ReadCatalogue(bool refresh = false)
     {
-        if (scanCancellation is { IsCancellationRequested: false } scanning)
-        {
-            scanning.Cancel();
-            return;
-        }
+        if (scanCancellation is { IsCancellationRequested: false }) return;
         if (source is not { } game) return;
         using var cancellation = new CancellationTokenSource();
         scanCancellation = cancellation;
         var token = cancellation.Token;
-        var rawIndex = ModelMode.SelectedIndex == 2;
-        var charactersOnly = ScanAllModels.IsChecked != true;
-        ScanAllModels.IsEnabled = false;
-        ScanButton.Content = "取消读取";
-        BrowserStatus.Text = rawIndex ? "正在扫描模型索引…" : "正在读取模型关联表…";
+        BrowserStatus.Text = "正在读取模型关联表…";
         var progress = new Progress<string>(message =>
         {
             if (scanCancellation == cancellation && !token.IsCancellationRequested) BrowserStatus.Text = message;
         });
         try
         {
-            if (rawIndex)
+            var catalog = await game.ListNamedModelsAsync(token, progress, refresh);
+            token.ThrowIfCancellationRequested();
+            namedModels = catalog;
+            if (ModelMode.SelectedIndex != 2)
             {
-                var catalog = await Task.Run(() => game.ListModelLocations(token, progress: progress, charactersOnly: charactersOnly), token);
-                token.ThrowIfCancellationRequested();
-                models = catalog;
+                ModelSearch.IsEnabled = true;
+                await ApplyModelFilter();
             }
-            else
-            {
-                var catalog = await game.ListNamedModelsAsync(token, progress, refresh);
-                token.ThrowIfCancellationRequested();
-                namedModels = catalog;
-            }
-            ModelSearch.IsEnabled = true;
-            await ApplyModelFilter();
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested)
         {
-            if (scanCancellation == cancellation && ReferenceEquals(source, game)) BrowserStatus.Text = "已取消扫描";
+            if (scanCancellation == cancellation && ReferenceEquals(source, game) && ModelMode.SelectedIndex != 2)
+                BrowserStatus.Text = "已取消读取";
         }
         catch (Exception ex)
         {
-            if (!token.IsCancellationRequested) BrowserStatus.Text = $"扫描模型失败 · {ex.Message}";
+            if (!token.IsCancellationRequested && ModelMode.SelectedIndex != 2) BrowserStatus.Text = $"读取模型目录失败 · {ex.Message}";
         }
         finally
         {
-            if (scanCancellation == cancellation)
-            {
-                scanCancellation = null;
-                ScanButton.Content = ModelMode.SelectedIndex == 2 ? "扫描模型" : "读取目录";
-                ScanAllModels.IsEnabled = source is not null;
-            }
+            if (scanCancellation == cancellation) scanCancellation = null;
         }
     }
 
@@ -248,7 +231,8 @@ public partial class ModelPreview : UserControl
         {
             if (debounce) await Task.Delay(180, token);
             var tree = await Task.Run(() => mode == 2
-                ? PathTree.Build(rawCatalog!, model => model.Path, query, model => model.Container, token)
+                ? PathTree.Build(rawCatalog!, model => model.Path, query, model => model.Container, token,
+                    displayPathSelector: SqPackBrowser.CompactModelPath)
                 : BuildNamedTree(namedCatalog!, mode == 1, query, token), token);
             token.ThrowIfCancellationRequested();
             ModelTree.ItemsSource = tree;
@@ -273,6 +257,7 @@ public partial class ModelPreview : UserControl
         actionDiscoveryCancellation?.Cancel();
         actionReadCancellation?.Cancel();
         actions = null;
+        requestedActionPath = null;
         scene = null;
         selectedNamedModel = null;
         ModelEntryInfo.Text = "";
@@ -328,6 +313,7 @@ public partial class ModelPreview : UserControl
         EmptyViewport.Visibility = Visibility.Collapsed;
         ResetButton.IsEnabled = true;
         ModelSurface.Cursor = Cursors.SizeAll;
+        StartDefaultIdle();
     }
 
     private void SetModelStatus(string message, bool error = false)
@@ -439,8 +425,9 @@ public partial class ModelPreview : UserControl
             actions = paths.Select(path => new ResourceChoiceItem(path, Path.GetFileName(path))).ToArray();
             ActionFilter.IsEnabled = actions.Length > 0;
             ApplyActionFilter();
-            if (ActionPath.Text.Length == 0 && ActionFilter.Text.Length == 0)
-                ActionChoice.SelectedItem = actions.FirstOrDefault(item => item.Path.EndsWith("/resident/monster.pap", StringComparison.Ordinal));
+            if (requestedActionPath is null && string.IsNullOrWhiteSpace(ActionPath.Text) && actions.Length > 0)
+                ActionChoice.SelectedItem = actions.FirstOrDefault(item => item.Path.EndsWith("/resident/monster.pap", StringComparison.Ordinal))
+                    ?? actions[0];
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         catch (Exception ex)
@@ -461,13 +448,20 @@ public partial class ModelPreview : UserControl
         var query = ActionFilter.Text.Trim().Replace('\\', '/');
         var filtered = query.Length == 0 ? actions : actions.Where(item => item.Path.Contains(query, StringComparison.OrdinalIgnoreCase)).ToArray();
         ActionChoice.ItemsSource = filtered;
+        SyncActionChoice();
         ActionChoice.IsEnabled = filtered.Length > 0;
         ActionDiscoveryStatus.Text = actions.Length == 0 ? "未找到本地动作候选，可输入路径。" : $"{filtered.Length:N0} / {actions.Length:N0} 个本地候选";
     }
 
+    private void SyncActionChoice() => ActionChoice.SelectedItem = requestedActionPath is null ? null
+        : ActionChoice.Items.Cast<ResourceChoiceItem>().FirstOrDefault(item =>
+            string.Equals(item.Path, requestedActionPath, StringComparison.OrdinalIgnoreCase));
+
     private async void ActionSelected(object sender, SelectionChangedEventArgs e)
     {
-        if (ActionChoice.SelectedItem is ResourceChoiceItem action) await OpenAnimation(action.Path);
+        if (ActionChoice.SelectedItem is ResourceChoiceItem action
+            && !string.Equals(action.Path, requestedActionPath, StringComparison.OrdinalIgnoreCase))
+            await OpenAnimation(action.Path);
     }
 
     private async void LoadAction(object sender, RoutedEventArgs e) => await OpenAnimation(ActionPath.Text);
@@ -479,14 +473,14 @@ public partial class ModelPreview : UserControl
         await OpenAnimation(ActionPath.Text);
     }
 
-    private async Task OpenAnimation(string path)
+    private async Task OpenAnimation(string path, bool autoPlayIdle = false)
     {
         if (source is not { } game || scene is null) return;
         actionReadCancellation?.Cancel();
         ActionPath.Text = path.Trim().Replace('\\', '/').TrimStart('/');
         var actionPath = ActionPath.Text;
-        if (ActionChoice.SelectedItem is ResourceChoiceItem selected && selected.Path != actionPath)
-            ActionChoice.SelectedIndex = -1;
+        requestedActionPath = actionPath;
+        SyncActionChoice();
         ClearActionMetadata();
         if (!actionPath.EndsWith(".pap", StringComparison.OrdinalIgnoreCase))
         {
@@ -504,11 +498,19 @@ public partial class ModelPreview : UserControl
             token.ThrowIfCancellationRequested();
             ActionMetadataStatus.Text = $"{action.Slots.Count:N0} 个动作槽 · Havok 数据 {action.HavokDataBytes:N0} 字节";
             loadedAction = action;
-            PlaybackSlot.ItemsSource = action.Slots;
-            PlaybackSlot.Visibility = action.Slots.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
-            PlaybackSlot.SelectedItem = action.Slots.FirstOrDefault(slot => slot.Name == "cbnm_id0")
-                ?? action.Slots.FirstOrDefault(slot => slot.Name == "cbbm_id0") ?? action.Slots.FirstOrDefault();
+            settingPlaybackSlots = true;
+            try
+            {
+                PlaybackSlot.ItemsSource = action.Slots;
+                PlaybackSlotPicker.Visibility = action.Slots.Count == 0 ? Visibility.Collapsed : Visibility.Visible;
+                PreviousPlaybackSlot.IsEnabled = NextPlaybackSlot.IsEnabled = action.Slots.Count > 1;
+                PlaybackSlot.SelectedItem = action.Slots.FirstOrDefault(slot => slot.Name == "cbnm_id0")
+                    ?? action.Slots.FirstOrDefault(slot => slot.Name == "cbbm_id0") ?? action.Slots.FirstOrDefault();
+            }
+            finally { settingPlaybackSlots = false; }
             UpdatePlaybackControls();
+            if (!autoPlayIdle || PlaybackSlot.SelectedItem is GameAnimationSlot { Name: "cbnm_id0" or "cbbm_id0" })
+                await StartPlaybackAsync();
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         catch (Exception ex)
@@ -521,12 +523,23 @@ public partial class ModelPreview : UserControl
         }
     }
 
+    private void SelectPreviousPlaybackSlot(object sender, RoutedEventArgs e) => SelectAdjacentPlaybackSlot(-1);
+
+    private void SelectNextPlaybackSlot(object sender, RoutedEventArgs e) => SelectAdjacentPlaybackSlot(1);
+
+    private void SelectAdjacentPlaybackSlot(int direction)
+    {
+        var count = PlaybackSlot.Items.Count;
+        if (count < 2) return;
+        PlaybackSlot.SelectedIndex = (PlaybackSlot.SelectedIndex + direction + count) % count;
+    }
+
     private void ClearActionMetadata()
     {
         loadedAction = null;
         StopPlayback();
         PlaybackSlot.ItemsSource = null;
-        PlaybackSlot.Visibility = Visibility.Collapsed;
+        PlaybackSlotPicker.Visibility = Visibility.Collapsed;
         PlaybackStatus.Text = "";
         ActionMetadataStatus.Text = "";
     }

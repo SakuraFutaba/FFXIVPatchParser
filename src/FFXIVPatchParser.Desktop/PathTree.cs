@@ -40,7 +40,7 @@ public static class PathTree
     /// <summary>Builds an immutable hierarchy without allocating TreeViewItems. Filtered leaves retain and expand their ancestors.</summary>
     public static IReadOnlyList<PathTreeNode> Build<T>(IEnumerable<T> items, Func<T, string> pathSelector,
         string? filter = null, Func<T, string>? searchTextSelector = null, CancellationToken token = default,
-        IComparer<string>? labelComparer = null)
+        IComparer<string>? labelComparer = null, Func<string, string>? displayPathSelector = null)
     {
         ArgumentNullException.ThrowIfNull(items);
         ArgumentNullException.ThrowIfNull(pathSelector);
@@ -50,7 +50,7 @@ public static class PathTree
         {
             token.ThrowIfCancellationRequested();
             var original = pathSelector(item) ?? throw new ArgumentException("Path cannot be null.", nameof(pathSelector));
-            var segments = Segments(original);
+            var segments = Segments(displayPathSelector?.Invoke(original) ?? original);
             if (query.Length != 0 && !original.Contains(query, StringComparison.OrdinalIgnoreCase)
                 && !string.Join('/', segments).Contains(query.Replace('\\', '/'), StringComparison.OrdinalIgnoreCase)
                 && !(searchTextSelector?.Invoke(item)?.Contains(query, StringComparison.OrdinalIgnoreCase) ?? false)) continue;
