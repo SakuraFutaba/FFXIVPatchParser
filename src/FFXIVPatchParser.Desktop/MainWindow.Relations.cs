@@ -15,6 +15,7 @@ public partial class MainWindow
     private CancellationTokenSource? diffCellRelationRequest;
     private Task diffRelationPresentationTask = Task.CompletedTask;
     private bool diffPresentationPending;
+    private bool diffDefinitionDownloadFailed;
     private readonly Dictionary<(bool Added, RowKey Row, string Column), RelatedCell> relationValues = new();
     private readonly Dictionary<(bool Added, string Column), SheetColumn> relationColumns = new();
 
@@ -26,6 +27,7 @@ public partial class MainWindow
 
     private void CreateDiffResolvers()
     {
+        diffDefinitionDownloadFailed = false;
         beforeRelations = before == null ? null : new(SqPackView.Definitions, before);
         afterRelations = after == null ? null : new(SqPackView.Definitions, after);
     }
@@ -48,9 +50,12 @@ public partial class MainWindow
 
     private void ToggleDiffRelations(object sender, RoutedEventArgs e)
     {
-        if (DiffLinked.IsChecked == true) CreateDiffResolvers();
+        if (DiffLinked.IsChecked == true)
+        {
+            if (diffDefinitionDownloadFailed || beforeRelations?.LastWarning != null || afterRelations?.LastWarning != null) CreateDiffResolvers();
+        }
         else if (diff != null) SetStatus("Raw 显示 · 字段名来自对应版本的已验证定义。");
-        RenderDiff();
+        RenderDiff(resetWidths: true);
     }
 
     private ComparedColumn PresentedColumn(ComparedColumn column) => new(column.Id,
@@ -93,7 +98,7 @@ public partial class MainWindow
                 using var download = CancellationTokenSource.CreateLinkedTokenSource(pending.Token);
                 download.CancelAfter(TimeSpan.FromSeconds(8));
                 try { await SqPackView.Definitions.DownloadAsync([sheet], download.Token); }
-                catch (Exception) when (!pending.IsCancellationRequested) { /* Versioned CSV headers remain usable offline. */ }
+                catch (Exception) when (!pending.IsCancellationRequested) { diffDefinitionDownloadFailed = true; /* Versioned CSV headers remain usable offline. */ }
             }
             pending.Token.ThrowIfCancellationRequested();
             async Task<RelatedSheetPage?> Read(RelationResolver? resolver, SheetData? data)
@@ -101,7 +106,6 @@ public partial class MainWindow
             var results = await Task.WhenAll(Read(oldResolver, oldPage), Read(newResolver, newPage));
             pending.Token.ThrowIfCancellationRequested();
             if (diff != capturedDiff || relationSheet != sheet) return;
-            var columnsChanged = false;
             for (var side = 0; side < results.Length; side++)
             {
                 if (results[side] is not { } page) continue;
@@ -111,13 +115,12 @@ public partial class MainWindow
                     var column = page.Data.Columns[i];
                     var key = (side == 1, column.Id);
                     if (column == rawColumns[i] && relationColumns.ContainsKey(key)) continue;
-                    if (column != relationColumns.GetValueOrDefault(key, rawColumns[i])) columnsChanged = true;
                     relationColumns[key] = column;
                 }
                 foreach (var (key, relation) in page.Cells)
                     relationValues[(side == 1, key.Row, page.Data.Columns[key.Column].Id)] = relation;
             }
-            diffPresentationPending = columnsChanged || relationValues.Count > 0;
+            diffPresentationPending = true;
             ApplyDiffRelationPresentation();
             var warning = new[] { oldResolver?.LastWarning, newResolver?.LastWarning }.FirstOrDefault(message => message != null);
             if (related) SetStatus(warning ?? "关联显示 · 引用分别取自旧、新数据源；差异按原始值判断。右键绿色行可定位本地单元格或打开关联。");
@@ -184,11 +187,12 @@ public partial class MainWindow
             var bitmap = await SqPackView.ReadRelationIconAsync(path, token);
             token.ThrowIfCancellationRequested();
             if (bitmap == null) return;
-            view.ShowTargetIcon(bitmap, path, async (_, _) =>
+            var previewHeight = view.ShowTargetIcon(bitmap, path, async (_, _) =>
             {
                 CloseCellDetails();
                 await SqPackView.ShowTextureAsync(path);
             });
+            OldCell.Height = NewCell.Height = Math.Max(OldCell.Height, previewHeight + 86);
         }
 
         try
@@ -219,7 +223,7 @@ public partial class MainWindow
         var current = DiffGrid.CurrentCell;
         var index = current.Column?.DisplayIndex ?? -1;
         var focused = DiffGrid.IsKeyboardFocusWithin;
-        RenderDiff(updateRelations: false);
+        RenderDiff(updateRelations: false, resetWidths: true);
         if (current.Item is not DiffLine previous || index < 0 || index >= DiffGrid.Columns.Count) return;
         var line = DiffGrid.Items.OfType<DiffLine>().FirstOrDefault(item => item.Label == previous.Label);
         if (line == null) return;
@@ -253,14 +257,19 @@ public partial class MainWindow
             var locate = new MenuItem { Header = position < 0 ? "在本地 SqPack 定位此行" : "在本地 SqPack 定位此单元格" };
             locate.Click += async (_, _) =>
             {
+                DiffGrid.CurrentCell = new DataGridCellInfo(line, cell.Column);
                 CloseCellDetails();
                 await SqPackView.JumpToCellAsync(sheet, key, position);
             };
             menu.Items.Add(locate);
             if (position >= 0 && resolver != null)
             {
-                var follow = new MenuItem { Header = "打开关联记录 / Icon 图片" };
-                follow.Click += async (_, _) => await OpenRelatedDiffValue(sheet, raw, key, position, resolver);
+                var follow = new MenuItem { Header = "打开关联记录 / 本地图片" };
+                follow.Click += async (_, _) =>
+                {
+                    DiffGrid.CurrentCell = new DataGridCellInfo(line, cell.Column);
+                    await OpenRelatedDiffValue(sheet, raw, key, position, resolver);
+                };
                 menu.Items.Add(follow);
             }
             CloseCellDetails(); menu.PlacementTarget = cell; menu.IsOpen = true;

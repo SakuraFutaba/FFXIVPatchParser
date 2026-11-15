@@ -66,26 +66,68 @@
       <RowDefinition Height="*"/>
       <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
+    <Grid>
+      <Grid.ColumnDefinitions>
+        <ColumnDefinition x:Name="FileTreeColumn" Width="0"/>
+        <ColumnDefinition x:Name="FileDividerColumn" Width="0"/>
+        <ColumnDefinition Width="*"/>
+      </Grid.ColumnDefinitions>
+      <local:SqPackFileTree x:Name="FileTree" Visibility="Collapsed"/>
+      <GridSplitter x:Name="FileSplitter" Grid.Column="1" HorizontalAlignment="Stretch" VerticalAlignment="Stretch"
+                    Background="Transparent" ResizeBehavior="PreviousAndNext" ShowsPreview="False"
+                    AutomationProperties.Name="调整文件目录宽度" Visibility="Collapsed"/>
+      <Grid Grid.Column="2">
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <DockPanel x:Name="FileDetails" Visibility="Collapsed" Margin="0,0,0,8">
+          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top" Margin="8,0,0,0">
+            <Button x:Name="SwitchFilePreviewButton" Content="查看 Hex" Click="SwitchFilePreview" Visibility="Collapsed"/>
+            <Button x:Name="JumpToFilePreviewButton" Click="JumpToFilePreview" Visibility="Collapsed"/>
+            <Button x:Name="CopyFilePathButton" Content="复制路径" Click="CopyFilePath" IsEnabled="False" Margin="0"/>
+          </StackPanel>
+          <StackPanel>
+            <TextBlock x:Name="FileSourcePath" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                       ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+            <TextBlock x:Name="FileInfo" Foreground="{StaticResource Muted}" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"
+                       ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+          </StackPanel>
+        </DockPanel>
+        <Grid Grid.Row="1">
+          <DockPanel x:Name="FileHexPanel" Visibility="Collapsed">
+            <StackPanel x:Name="FileHexNavigation" DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6" Visibility="Collapsed">
+              <Button x:Name="PreviousFileHexButton" Content="‹" ToolTip="上一个字节区间" AutomationProperties.Name="上一个字节区间" Click="PreviousFileHex"/>
+              <TextBox x:Name="FileOffsetInput" Width="116" Tag="十六进制偏移" KeyDown="FileOffsetKeyDown"
+                       AutomationProperties.Name="十六进制偏移"/>
+              <Button Content="跳转" Click="GoToFileOffset" Margin="6,0,0,0"/>
+              <Button x:Name="NextFileHexButton" Content="›" ToolTip="下一个字节区间" AutomationProperties.Name="下一个字节区间"
+                      Click="NextFileHex" Margin="6,0,0,0"/>
+            </StackPanel>
+            <TextBox x:Name="FileHexText" IsReadOnly="True" FontFamily="Cascadia Mono, Consolas" FontSize="12"
+                     Padding="10,8" TextWrapping="NoWrap" VerticalContentAlignment="Top"
+                     VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
+                     AutomationProperties.Name="文件十六进制内容"/>
+          </DockPanel>
         <Grid x:Name="TablesPanel" IsEnabled="False">
           <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="196"/>
-            <ColumnDefinition Width="8"/>
+            <ColumnDefinition x:Name="TableTreeColumn" Width="196"/>
+            <ColumnDefinition x:Name="TableTreeDivider" Width="8"/>
             <ColumnDefinition Width="*"/>
           </Grid.ColumnDefinitions>
-          <DockPanel>
-            <TextBox x:Name="TableSearch" DockPanel.Dock="Top" Tag="搜索表名…" ToolTip="搜索表名"
+          <DockPanel x:Name="TableTreePanel">
+            <TextBox x:Name="TableSearch" Style="{StaticResource SearchTextBox}" DockPanel.Dock="Top" Tag="搜索表名…" ToolTip="搜索表名"
                      TextChanged="FilterTables" Margin="0,0,0,6"/>
             <TextBlock x:Name="TableCount" DockPanel.Dock="Bottom" Foreground="{StaticResource Muted}" Margin="0,6,0,0"/>
             <TreeView x:Name="TablesList" Style="{StaticResource PathTreeView}" ItemTemplate="{StaticResource PathTreeLabel}"
-                      SelectedItemChanged="TableSelected"/>
+                      SelectedItemChanged="TableSelected" PreviewMouseRightButtonDown="CopyLocalTableName" PreviewMouseLeftButtonDown="ClickLocalTable"/>
           </DockPanel>
           <Grid Grid.Column="2">
             <Grid.RowDefinitions>
               <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto"/>
               <RowDefinition Height="*"/>
               <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
-            <DockPanel Margin="0,0,0,6">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"><StackPanel x:Name="LocalTableTabStrip" Orientation="Horizontal"/></ScrollViewer>
+            <DockPanel Grid.Row="1" x:Name="TableToolbar" Margin="0,4,0,6">
               <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
                 <Button x:Name="TableModeButton" Content="切换至 Raw" Click="ToggleTableMode"/>
                 <Button Content="导入定义…" Click="ImportTableDefinitions" ToolTip="导入 SaintCoinach 定义目录"/>
@@ -96,7 +138,7 @@
               </StackPanel>
               <TextBlock x:Name="TableInfo" Text="选择一张表查看完整内容" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
             </DockPanel>
-            <DataGrid Grid.Row="1" x:Name="TableGrid" SelectionUnit="Cell" CanUserSortColumns="False" IsVisibleChanged="TableGridVisibilityChanged"
+            <DataGrid Grid.Row="2" x:Name="TableGrid" SelectionUnit="Cell" CanUserSortColumns="False" IsVisibleChanged="TableGridVisibilityChanged"
                       RowHeaderWidth="0" RowHeaderStyle="{StaticResource HiddenTableRowHeader}"
                       CanUserReorderColumns="False" PreviewMouseLeftButtonUp="TableCellClicked" PreviewKeyDown="TableGridKeyDown"
                       ScrollViewer.ScrollChanged="TableGridScrolled" LostMouseCapture="TableGridLostMouseCapture"/>
@@ -106,7 +148,7 @@
             <Border Background="White" BorderBrush="#D0D7DE" BorderThickness="1" CornerRadius="6" Padding="12" Width="300">
               <StackPanel>
                 <TextBlock x:Name="TableFilterTitle" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,8"/>
-                <TextBox x:Name="TableFilterInput" Tag="输入关键词，Enter 应用" KeyDown="TableFilterKeyDown"/>
+                <TextBox x:Name="TableFilterInput" Style="{StaticResource SearchTextBox}" Tag="输入关键词，Enter 应用" KeyDown="TableFilterKeyDown"/>
                 <TextBlock Text="在整张表中匹配原始值，多个列条件同时生效。" Foreground="{StaticResource Muted}" Margin="0,6" TextWrapping="Wrap"/>
                 <StackPanel Orientation="Horizontal">
                   <Button Content="应用" Click="ApplyTableFilter"/>
@@ -125,12 +167,10 @@
                 <CheckBox x:Name="RawCellToggle" Content="显示原始值" Checked="ToggleRawCell" Unchecked="ToggleRawCell" Margin="0,0,0,6"/>
                 <TextBox x:Name="CellText" IsReadOnly="True" MinHeight="42" MaxHeight="300" VerticalScrollBarVisibility="Auto"
                          TextWrapping="Wrap" VerticalContentAlignment="Top"/>
-                <ScrollViewer x:Name="CellTargetIconViewport" Visibility="Collapsed" MaxHeight="180" Margin="0,6,0,0"
-                              HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
-                  <Button x:Name="CellTargetIconButton" Style="{StaticResource CellIconLink}" Click="OpenCellIcon">
-                    <local:NativePixelImage x:Name="CellTargetIcon"/>
-                  </Button>
-                </ScrollViewer>
+                <Button x:Name="CellTargetIconButton" Visibility="Collapsed" Margin="0,8,0,0"
+                        Style="{StaticResource CellIconLink}" Click="OpenCellIcon">
+                  <local:NativePixelImage x:Name="CellTargetIcon" MaxWidth="352" MaxHeight="224"/>
+                </Button>
                 <TextBlock x:Name="CellRelationStatus" Visibility="Collapsed" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,6,0,0"/>
                 <Button x:Name="CellRelationButton" Visibility="Collapsed" Click="FollowCellRelation" HorizontalAlignment="Left" Margin="0,6,0,0"/>
               </StackPanel>
@@ -139,17 +179,17 @@
         </Grid>
         <Grid x:Name="LocalImagesPanel" IsEnabled="False" Visibility="Collapsed" IsVisibleChanged="LocalImagesVisibilityChanged">
           <Grid.ColumnDefinitions>
-            <ColumnDefinition Width="310"/>
-            <ColumnDefinition Width="8"/>
+            <ColumnDefinition x:Name="ImageTreeColumn" Width="310"/>
+            <ColumnDefinition x:Name="ImageTreeDivider" Width="8"/>
             <ColumnDefinition Width="*"/>
           </Grid.ColumnDefinitions>
-          <Grid>
+          <Grid x:Name="LocalImageTreePanel">
             <Grid.RowDefinitions>
               <RowDefinition Height="Auto"/>
               <RowDefinition Height="*"/>
               <RowDefinition Height="Auto"/>
             </Grid.RowDefinitions>
-            <TextBox x:Name="IconSearch" Tag="筛选路径或编号…" ToolTip="筛选图标路径或编号" TextChanged="FilterIcons" Margin="0,0,0,6"/>
+            <TextBox x:Name="IconSearch" Style="{StaticResource SearchTextBox}" Tag="筛选路径或编号…" ToolTip="筛选图标路径或编号" TextChanged="FilterIcons" Margin="0,0,0,6"/>
             <DockPanel Grid.Row="1">
               <TextBlock x:Name="TextureTreeCount" Text="尚未读取目录" DockPanel.Dock="Bottom" Foreground="{StaticResource Muted}" Margin="0,6,0,0"/>
               <TreeView x:Name="TextureTree" Style="{StaticResource PathTreeView}" ItemTemplate="{StaticResource PathTreeLabel}"
@@ -187,7 +227,7 @@
               <RowDefinition Height="Auto"/>
               <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
-            <DockPanel Margin="0,0,0,6">
+            <DockPanel x:Name="LocalImagePathPanel" Margin="0,0,0,6">
               <Button DockPanel.Dock="Right" Content="打开 .tex" Click="OpenTexture" Margin="6,0,0,0"/>
               <TextBox x:Name="TexturePath" Tag="输入 SqPack 内的 .tex 路径…" ToolTip="SqPack 内的 .tex 路径"
                        KeyDown="TexturePathKeyDown"/>
@@ -196,11 +236,12 @@
           </Grid>
         </Grid>
     <local:ModelPreview x:Name="LocalModelsPanel" Visibility="Collapsed" RelatedTableRequested="OpenModelSheet"/>
+    <local:MapPreview x:Name="LocalMapsPanel" Visibility="Collapsed" RelatedTableRequested="OpenModelSheet"/>
     <local:AudioPreview x:Name="LocalAudioPanel" Visibility="Collapsed"/>
     <Grid x:Name="PatchModelsPanel" Visibility="Collapsed">
       <Grid.ColumnDefinitions><ColumnDefinition Width="310"/><ColumnDefinition Width="8"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
       <DockPanel>
-        <TextBox x:Name="PatchModelSearch" DockPanel.Dock="Top" Tag="筛选模型路径…" Margin="0,0,0,6"
+        <TextBox x:Name="PatchModelSearch" Style="{StaticResource SearchTextBox}" DockPanel.Dock="Top" Tag="筛选模型路径…" Margin="0,0,0,6"
                  TextChanged="FilterPatchModels"/>
         <TextBlock x:Name="PatchModelsSummary" DockPanel.Dock="Bottom" Style="{StaticResource PatchScanSummary}" Margin="0,6,0,0"/>
         <TreeView x:Name="PatchModelsList" Style="{StaticResource PathTreeView}" ItemTemplate="{StaticResource PathTreeLabel}"
@@ -211,7 +252,7 @@
     <Grid x:Name="PatchAudioPanel" Visibility="Collapsed">
       <Grid.ColumnDefinitions><ColumnDefinition Width="310"/><ColumnDefinition Width="8"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
       <DockPanel>
-        <TextBox x:Name="PatchAudioSearch" DockPanel.Dock="Top" Tag="筛选音频路径…" Margin="0,0,0,6"
+        <TextBox x:Name="PatchAudioSearch" Style="{StaticResource SearchTextBox}" DockPanel.Dock="Top" Tag="筛选音频路径…" Margin="0,0,0,6"
                  TextChanged="FilterPatchAudio"/>
         <TextBlock x:Name="PatchAudioSummary" DockPanel.Dock="Bottom" Style="{StaticResource PatchScanSummary}" Margin="0,6,0,0"/>
         <TreeView x:Name="PatchAudioList" Style="{StaticResource PathTreeView}" ItemTemplate="{StaticResource PathTreeLabel}"
@@ -227,7 +268,7 @@
           <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
         <DockPanel>
-          <TextBox x:Name="PatchImageSearch" DockPanel.Dock="Top" Tag="筛选图片路径或变化依据…" ToolTip="筛选图片 Diff" Margin="0,0,0,6"
+          <TextBox x:Name="PatchImageSearch" Style="{StaticResource SearchTextBox}" DockPanel.Dock="Top" Tag="筛选图片路径或变化依据…" ToolTip="筛选图片 Diff" Margin="0,0,0,6"
                    TextChanged="FilterPatchImages"/>
           <StackPanel DockPanel.Dock="Bottom" Margin="0,6,0,0">
             <TextBlock x:Name="PatchImageCount" Foreground="{StaticResource Muted}"/>
@@ -243,6 +284,9 @@
           </Grid.RowDefinitions>
           <TextBox x:Name="PatchImagePath" IsReadOnly="True" Margin="0,0,0,6" Tag="选择一张图片查看纹理"/>
           <local:TexturePreview x:Name="PatchTexturePreview" Grid.Row="1"/>
+        </Grid>
+      </Grid>
+    </Grid>
         </Grid>
       </Grid>
     </Grid>

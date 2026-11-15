@@ -11,7 +11,7 @@ using System.Windows.Threading;
 
 namespace FFXIVPatchParser.Desktop;
 
-public enum SqPackPage { Tables, Images, Models, Audio, PatchImages, PatchModels, PatchAudio }
+public enum SqPackPage { Tables, Images, Models, Audio, PatchImages, PatchModels, PatchAudio, Maps, Files }
 
 public partial class SqPackBrowser : UserControl
 {
@@ -47,6 +47,7 @@ public partial class SqPackBrowser : UserControl
     public SqPackBrowser()
     {
         InitializeComponent();
+        FileTree.FileSelected += OpenFileFromTree;
         initialized = true;
         ResetPatchMedia();
         UpdateControls();
@@ -72,18 +73,14 @@ public partial class SqPackBrowser : UserControl
     public void ShowPage(SqPackPage page)
     {
         CloseTablePopups();
+        if (currentPage == SqPackPage.Files && page != SqPackPage.Files) SuspendFilePreview();
+        var openingFiles = page == SqPackPage.Files && (currentPage != SqPackPage.Files || filePreviewSuspended);
         currentPage = page;
-        TablesPanel.Visibility = Visible(SqPackPage.Tables);
-        LocalImagesPanel.Visibility = Visible(SqPackPage.Images);
-        LocalModelsPanel.Visibility = Visible(SqPackPage.Models);
-        LocalAudioPanel.Visibility = Visible(SqPackPage.Audio);
-        PatchImagesPanel.Visibility = Visible(SqPackPage.PatchImages);
-        PatchModelsPanel.Visibility = Visible(SqPackPage.PatchModels);
-        PatchAudioPanel.Visibility = Visible(SqPackPage.PatchAudio);
+        UpdateFileLayout(page == SqPackPage.Files);
+        if (openingFiles) ResumeFilePreview();
+        UpdateVisiblePanels();
         DisplayBrowserStatus();
         MediaControlsChanged?.Invoke();
-
-        Visibility Visible(SqPackPage target) => page == target ? Visibility.Visible : Visibility.Collapsed;
     }
 
     public void SetPatch(LoadedPatch? loaded, string[] archivePaths)
@@ -172,6 +169,8 @@ public partial class SqPackBrowser : UserControl
         patchCatalogueCancellation?.Cancel();
         imageCatalogCancellation?.Cancel();
         textureSearchCancellation?.Cancel();
+        await StopFileWorkAsync();
+        await LocalMapsPanel.StopLoadingAsync();
         await StopTablePresentation();
         await StopThumbnails();
         await patchCatalogueTask;
@@ -182,7 +181,7 @@ public partial class SqPackBrowser : UserControl
     {
         var source = game;
         game = null;
-        SetMediaSource(null);
+        if (!closing) SetMediaSource(null);
         source?.Dispose();
     }
 
@@ -192,6 +191,8 @@ public partial class SqPackBrowser : UserControl
         await Work("正在读取 SqPack 目录…", async token =>
         {
             imageCatalogCancellation?.Cancel();
+            await StopFileWorkAsync();
+            await LocalMapsPanel.StopLoadingAsync();
             await StopTablePresentation();
             await StopThumbnails();
             var source = await Task.Run(() => new LocalGameSource(path), token);
@@ -205,13 +206,18 @@ public partial class SqPackBrowser : UserControl
             DisposeGame();
             game = source;
             pageStatuses.Clear();
+            ResetFilePreview();
+            FileTree.SetSource(source);
             SetMediaSource(source);
             tableIconCache.Clear();
             ResetTableRelations();
             GameVersionLabel = GetGameVersionLabel(source);
             GameVersionChanged?.Invoke();
+            localTableTabs.Clear();
+            RenderLocalTableTabs();
             selectedTable = null;
             ResetTable();
+            PathTreeView.Reset(TablesList);
             ApplyTableSearch();
             ResetLocalImages();
             ResetPatchImages();
@@ -301,7 +307,8 @@ public partial class SqPackBrowser : UserControl
     private void UpdateControls()
     {
         var idle = operation == null;
-        TablesPanel.IsEnabled = idle && game != null;
+        TablesPanel.IsEnabled = game != null && (idle || localTableTabs.Opening != null);
+        TableToolbar.IsEnabled = TableGrid.IsEnabled = idle;
         LocalImagesPanel.IsEnabled = idle && game != null;
         LocalModelsPanel.IsEnabled = idle && game != null;
         LocalAudioPanel.IsEnabled = idle && game != null;
@@ -351,16 +358,15 @@ public partial class SqPackBrowser : UserControl
     {
         var names = game?.SheetNames ?? [];
         var tree = PathTree.Build(names, name => name, TableSearch.Text);
-        TablesList.ItemsSource = tree;
+        PathTreeView.SetItems(TablesList, tree, TableSearch.Text);
         TableCount.Text = $"{tree.Sum(node => node.LeafCount):N0} / {names.Count:N0} 张表";
     }
 
     private async void TableSelected(object sender, RoutedPropertyChangedEventArgs<object> e)
     {
-        if (e.NewValue is not PathTreeNode { Payload: string name } || name == selectedTable) return;
-        selectedTable = name;
-        ResetTable();
-        await ReadRows();
+        if (PathTreeView.IsRestoringSelection(TablesList) || localTableTabs.Opening != null ||
+            e.NewValue is not PathTreeNode { Payload: string name } || name == selectedTable) return;
+        await OpenLocalTableAsync(name);
     }
 
     private void ResetTable()
@@ -389,6 +395,7 @@ public partial class SqPackBrowser : UserControl
             pendingTableView = null;
             var result = await ReadTablePage(source, name, 0, filters, token);
             token.ThrowIfCancellationRequested();
+            if (selectedTable != name || !ReferenceEquals(game, source)) return "";
             firstTableOffset = 0;
             tablePage = result;
             RenderTable();
@@ -408,9 +415,9 @@ public partial class SqPackBrowser : UserControl
         return new(view.Data.Columns, BuildTableRows(view), page.Language, page.HasMore ? page.NextOffset : null, raw);
     }
 
-    private void RenderTable(bool scrollToFirst = true)
+    private void RenderTable(bool scrollToFirst = true, bool resetWidths = false)
     {
-        var restore = TableColumnSizing.Capture(TableGrid, !scrollToFirst);
+        var restore = TableColumnSizing.Capture(TableGrid, !scrollToFirst, preserveWidths: !resetWidths);
         tableIconCancellation?.Cancel();
         CloseTableCell();
         TableGrid.ItemsSource = null;
@@ -581,7 +588,7 @@ public partial class SqPackBrowser : UserControl
         RawCellToggle.IsChecked = false;
         CellText.Text = selectedCell.Display;
         CellText.ScrollToHome();
-        CellPopup.PlacementTarget = cell;
+        CellImageLayout.Anchor(CellPopup, cell);
         CellPopup.IsOpen = true;
         if (focusValue) CellText.Focus();
         if (index >= 0) await ShowCellRelation(row.Id, index, page.Raw, row.Related[index]?.Relation);
@@ -638,8 +645,12 @@ public partial class SqPackBrowser : UserControl
         texturePaths = null;
         imageIndexScanned = false;
         IconSearch.Clear();
-        ShowTextureTree([]);
+        galleryDirectory = null;
+        PathTreeView.Reset(TextureTree);
+        ShowTextureTree([], "");
+        LoadGalleryDirectory();
         TexturePath.Clear();
+        CurrentTexturePath = null;
         LocalTexturePreview.SetImage(null);
         StartImageCatalogIfVisible();
     }
@@ -659,14 +670,18 @@ public partial class SqPackBrowser : UserControl
                 return (result, PathTree.Build(result, path => path, query, token: token));
             }, token);
             token.ThrowIfCancellationRequested();
+            textureSearchCancellation?.Cancel();
             texturePaths = paths;
             imageIndexScanned = true;
-            ShowTextureTree(tree);
+            if (query == IconSearch.Text) ShowTextureTree(tree, query);
+            else await ApplyIconFilterAsync(debounce: false);
             return $"已扫描 {paths.Count:N0} 张 UI 纹理，含 {paths.Count(path => path.StartsWith("sqpack:", StringComparison.Ordinal)):N0} 张路径未识别纹理";
         });
     }
 
-    private async void FilterIcons(object sender, TextChangedEventArgs e)
+    private async void FilterIcons(object sender, TextChangedEventArgs e) => await ApplyIconFilterAsync(debounce: true);
+
+    private async Task ApplyIconFilterAsync(bool debounce)
     {
         if (!initialized || closing || texturePaths is not { } paths) return;
         textureSearchCancellation?.Cancel();
@@ -676,10 +691,10 @@ public partial class SqPackBrowser : UserControl
         var query = IconSearch.Text;
         try
         {
-            await Task.Delay(180, token);
+            if (debounce) await Task.Delay(180, token);
             var tree = await Task.Run(() => PathTree.Build(paths, path => path, query, token: token), token);
             token.ThrowIfCancellationRequested();
-            ShowTextureTree(tree);
+            ShowTextureTree(tree, query);
         }
         catch (OperationCanceledException) { }
         catch (Exception ex) { if (!closing) SetStatus("筛选图片失败：" + ex.Message, true); }
@@ -689,18 +704,21 @@ public partial class SqPackBrowser : UserControl
         }
     }
 
-    private void ShowTextureTree(IReadOnlyList<PathTreeNode> tree)
+    private void ShowTextureTree(IReadOnlyList<PathTreeNode> tree, string query)
     {
-        TextureTree.ItemsSource = tree;
+        PathTreeView.SetItems(TextureTree, tree, query, path => path is "ui" or "ui/icon");
         TextureTreeCount.Text = texturePaths == null ? "尚未读取目录"
             : $"{tree.Sum(node => node.LeafCount):N0} / {texturePaths.Count:N0} 张{(imageIndexScanned ? " UI 纹理（含未识别路径）" : "已知图标")}";
-        galleryDirectory = null;
-        LoadGalleryDirectory();
+        if (galleryDirectory != null && PathTree.FindDirectory(tree, galleryDirectory.FullPath) is { } directory)
+        {
+            galleryDirectory = directory;
+            LoadGalleryDirectory(preservePage: true);
+        }
     }
 
     private async void TextureTreeSelected(object sender, RoutedPropertyChangedEventArgs<object> e)
     {
-        if (e.NewValue is not PathTreeNode node) return;
+        if (PathTreeView.IsRestoringSelection(TextureTree) || e.NewValue is not PathTreeNode node) return;
         if (node.IsDirectory)
         {
             galleryDirectory = node;
@@ -726,11 +744,13 @@ public partial class SqPackBrowser : UserControl
         galleryPaths = [];
     }
 
-    private void LoadGalleryDirectory()
+    private void LoadGalleryDirectory(bool preservePage = false)
     {
         if (!IconGallery.IsExpanded) return;
-        galleryPaths = galleryDirectory?.Children.Where(child => !child.IsDirectory).Select(child => child.FullPath).ToArray() ?? [];
-        iconPage = 0;
+        var paths = galleryDirectory?.Children.Where(child => !child.IsDirectory).Select(child => child.FullPath).ToArray() ?? [];
+        if (preservePage && galleryPaths.SequenceEqual(paths)) return;
+        galleryPaths = paths;
+        iconPage = preservePage ? Math.Min(iconPage, Math.Max(galleryPaths.Length - 1, 0) / IconsPerPage) : 0;
         RenderIconPage();
     }
 
@@ -834,11 +854,12 @@ public partial class SqPackBrowser : UserControl
 
     public async Task ShowTextureAsync(string virtualPath)
     {
+        var alreadyOnImages = currentPage == SqPackPage.Images && IsVisible;
         PageRequested?.Invoke(SqPackPage.Images);
-        if (await EnsureGameForNavigation()) await ShowLocalTexture(virtualPath);
+        if (await EnsureGameForNavigation()) await ShowLocalTexture(virtualPath, remember: alreadyOnImages);
     }
 
-    private async Task ShowLocalTexture(string virtualPath)
+    private async Task ShowLocalTexture(string virtualPath, bool remember = true)
     {
         var path = virtualPath.Trim().Replace('\\', '/').TrimStart('/');
         if (!path.EndsWith(".tex", StringComparison.OrdinalIgnoreCase) && !path.StartsWith("sqpack:", StringComparison.Ordinal))
@@ -850,10 +871,13 @@ public partial class SqPackBrowser : UserControl
         TexturePath.Text = path;
         await Work("正在解码纹理…", async token =>
         {
+            if (remember && CurrentTexturePath != path) NavigationStarting?.Invoke();
             LocalTexturePreview.SetImage(null);
+            CurrentTexturePath = null;
             var bitmap = await Task.Run(() => CreateBitmap(source.ReadTexture(path)), token);
             token.ThrowIfCancellationRequested();
             LocalTexturePreview.SetImage(bitmap, path);
+            CurrentTexturePath = path;
             return "已读取 " + path;
         });
     }
@@ -861,6 +885,7 @@ public partial class SqPackBrowser : UserControl
     private void ResetPatchImages()
     {
         patchImages = [];
+        PathTreeView.Reset(PatchImagesList);
         PatchSummary.Text = PatchCatalogueMessage;
         PatchImageSearch.Clear();
         ApplyPatchImageFilter();
@@ -900,13 +925,14 @@ public partial class SqPackBrowser : UserControl
     private void ApplyPatchImageFilter()
     {
         var tree = PathTree.Build(patchImages, image => image.Path, PatchImageSearch.Text, image => image.Evidence);
-        PatchImagesList.ItemsSource = tree;
+        PathTreeView.SetItems(PatchImagesList, tree, PatchImageSearch.Text);
         PatchImageCount.Text = $"{tree.Sum(node => node.LeafCount):N0} / {patchImages.Count:N0} 张写入纹理候选";
     }
 
     private async void PatchImageSelected(object sender, RoutedPropertyChangedEventArgs<object> e)
     {
-        if (game is not { } source || e.NewValue is not PathTreeNode { Payload: PatchImageEntry entry }) return;
+        if (PathTreeView.IsRestoringSelection(PatchImagesList) || game is not { } source ||
+            e.NewValue is not PathTreeNode { Payload: PatchImageEntry entry }) return;
         await Work("正在读取补丁目标纹理…", async token =>
         {
             PatchTexturePreview.SetImage(null);

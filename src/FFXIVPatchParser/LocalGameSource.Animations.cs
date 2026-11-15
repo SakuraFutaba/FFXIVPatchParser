@@ -17,7 +17,8 @@ public sealed partial class LocalGameSource
     /// This is not an exhaustive archive catalog or proof of skeleton compatibility.</summary>
     public IReadOnlyList<string> ListModelAnimationPaths(string modelPath, CancellationToken token = default)
     {
-        var match = Regex.Match(modelPath.Replace('\\', '/'), @"chara/(human|monster|demihuman|weapon)/([cmdw]\d{4})/|chara/(?:equipment|accessory)/[ea]\d{4}/model/(c\d{4})", RegexOptions.CultureInvariant);
+        var logicalPath = fileSystemModelContexts.GetValueOrDefault(modelPath, modelPath).Replace('\\', '/');
+        var match = Regex.Match(logicalPath, @"chara/(human|monster|demihuman|weapon)/([cmdw]\d{4})/|chara/(?:equipment|accessory)/[ea]\d{4}/model/(c\d{4})", RegexOptions.CultureInvariant);
         if (!match.Success) return [];
         var family = match.Groups[3].Success ? "human" : match.Groups[1].Value;
         var id = match.Groups[3].Success ? match.Groups[3].Value : match.Groups[2].Value;

@@ -42,6 +42,8 @@ public partial class TexturePreview : UserControl
 
     private void ToggleZoom(object sender, RoutedEventArgs e) => ResetView(fitToWindow: !fit);
 
+    internal void FitToWindow() => ResetView(fitToWindow: true);
+
     private double FitZoom(DpiScale dpi)
     {
         if (bitmap is null || Viewport.ActualWidth <= 0 || Viewport.ActualHeight <= 0) return 1;

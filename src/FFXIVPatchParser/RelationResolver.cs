@@ -14,6 +14,9 @@ public sealed record RelatedSheetPage(SheetData Data, IReadOnlyDictionary<(RowKe
 public sealed class RelationResolver(SaintCoinachDefinitions definitions, ITableSource source)
 {
     private readonly Dictionary<string, SheetData?> cache = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, SheetData?> rowCache = new(StringComparer.Ordinal);
+    private readonly LinkedList<string> rowCacheOrder = new();
+    private readonly Dictionary<(string Sheet, IReadOnlyList<SheetColumn> Columns, SheetDefinition Definition), bool> compatibility = new();
     private readonly Dictionary<string, Dictionary<uint, RowKey[]>> rowIndexes = new(StringComparer.Ordinal);
     private readonly LinkedList<string> cacheOrder = new();
     private readonly Dictionary<string, SheetDefinition?> effective = new(StringComparer.Ordinal);
@@ -125,10 +128,13 @@ public sealed class RelationResolver(SaintCoinachDefinitions definitions, ITable
     }
     private async Task<SheetData?> Read(string name, CancellationToken token, uint? rowId = null)
     {
-        var cacheKey = rowId is { } id && source is IRelationRowSource ? name + "#" + id : name;
-        if (cache.TryGetValue(cacheKey, out var sheet))
+        var singleRow = rowId.HasValue && source is IRelationRowSource;
+        var cacheKey = singleRow ? name + "#" + rowId : name;
+        var entries = singleRow ? rowCache : cache;
+        var order = singleRow ? rowCacheOrder : cacheOrder;
+        if (entries.TryGetValue(cacheKey, out var sheet))
         {
-            cacheOrder.Remove(cacheKey); cacheOrder.AddLast(cacheKey);
+            order.Remove(cacheKey); order.AddLast(cacheKey);
             return sheet;
         }
         if (!source.Sheets.ContainsKey(name)) return null;
@@ -142,18 +148,26 @@ public sealed class RelationResolver(SaintCoinachDefinitions definitions, ITable
         { retryAfter[name] = Environment.TickCount64 + 15000; LastWarning = failures[name] = $"关联目标 {name} 读取超时（{source.Format}，单次5秒/整页12秒预算）；15秒后可重试。"; return null; }
         catch (Exception ex) when (ex is IOException or InvalidDataException or HttpRequestException or InvalidOperationException)
         { retryAfter[name] = Environment.TickCount64 + 15000; LastWarning = failures[name] = $"关联目标 {name} 读取失败（{source.Format}，{ex.GetType().Name}）：{ex.Message}"; return null; }
-        // Bounded cache: large historical comparisons must not retain every sheet indefinitely.
-        if (cache.Count >= 32 && cacheOrder.First is { } first)
+        // 单行与整表分别限量，避免一页内的引用行挤掉整表或互相反复淘汰。
+        if (entries.Count >= (singleRow ? 1024 : 32) && order.First is { } first)
         {
-            cache.Remove(first.Value); rowIndexes.Remove(first.Value); cacheOrder.RemoveFirst();
+            entries.Remove(first.Value);
+            if (!singleRow) rowIndexes.Remove(first.Value);
+            order.RemoveFirst();
         }
-        cache[cacheKey] = sheet;
-        cacheOrder.AddLast(cacheKey);
+        entries[cacheKey] = sheet;
+        order.AddLast(cacheKey);
         return sheet;
     }
     private bool Compatible(string sheet, SheetData raw, SheetDefinition def)
     {
         if (verified.Contains(sheet)) return true;
+        var key = (sheet, raw.Columns, def);
+        if (compatibility.TryGetValue(key, out var compatible)) return compatible;
+        return compatibility[key] = CheckCompatibility(sheet, raw, def);
+    }
+    private bool CheckCompatibility(string sheet, SheetData raw, SheetDefinition def)
+    {
         if (def.Fields.Keys.Any(index => !raw.Columns.Any(c => c.Id == index.ToString(CultureInfo.InvariantCulture)))) return false;
         if (definitions.IsBound(sheet, source.Label, raw.Columns)) return true;
         // CSV headers are version-specific semantic evidence. Every named field must agree by ID.
@@ -163,7 +177,7 @@ public sealed class RelationResolver(SaintCoinachDefinitions definitions, ITable
     {
         await gate.WaitAsync(token);
         try { LastWarning = null; operationDeadline = Environment.TickCount64 + 12000; return await Resolve(sheet, raw, row, columnPosition, new HashSet<(string, RowKey, int)>(), token); }
-        finally { gate.Release(); }
+        finally { compatibility.Clear(); gate.Release(); }
     }
     private async Task<RelatedCell> Resolve(string sheet, SheetData raw, RowKey key, int position, HashSet<(string, RowKey, int)> visited, CancellationToken token)
     {
@@ -293,7 +307,7 @@ public sealed class RelationResolver(SaintCoinachDefinitions definitions, ITable
     {
         await gate.WaitAsync(token);
         try { LastWarning = null; operationDeadline = Environment.TickCount64 + 12000; return await Enrich(sheet, raw, resolveValues, token); }
-        finally { gate.Release(); }
+        finally { compatibility.Clear(); gate.Release(); }
     }
     private async Task<RelatedSheetPage> Enrich(string sheet, SheetData raw, bool resolveValues, CancellationToken token)
     {

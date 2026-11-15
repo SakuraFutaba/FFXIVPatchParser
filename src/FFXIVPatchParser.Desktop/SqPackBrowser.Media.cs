@@ -47,6 +47,7 @@ public partial class SqPackBrowser
     private void SetMediaSource(LocalGameSource? source)
     {
         LocalModelsPanel.SetSource(source);
+        LocalMapsPanel.SetSource(source);
         LocalAudioPanel.SetSource(source);
         PatchModelPreview.SetSource(source);
         PatchAudioPreview.SetSource(source);
@@ -56,8 +57,8 @@ public partial class SqPackBrowser
     {
         patchCatalogueNeeded = patch != null && patchArchives.Length > 0;
         patchModels = patchAudio = [];
-        PatchModelsList.ItemsSource = null;
-        PatchAudioList.ItemsSource = null;
+        PathTreeView.Reset(PatchModelsList);
+        PathTreeView.Reset(PatchAudioList);
         PatchModelSearch.Clear();
         PatchAudioSearch.Clear();
         PatchModelPreview.SetSource(null);
@@ -67,7 +68,7 @@ public partial class SqPackBrowser
         PatchModelsSummary.Text = PatchAudioSummary.Text = PatchCatalogueMessage;
     }
 
-    private string PatchCatalogueMessage => patch == null ? "请在补丁工作区打开补丁 ZIP。"
+    private string PatchCatalogueMessage => patch == null ? "请在「补丁目录」打开补丁 ZIP。"
         : game == null ? "请在设置中连接补丁对应的游戏版本。" : "等待查找已知路径…";
 
     private void StartPatchCatalogue()
@@ -165,11 +166,20 @@ public partial class SqPackBrowser
         if (initialized) ApplyPatchAudioFilter();
     }
 
-    private void ApplyPatchModelFilter() => PatchModelsList.ItemsSource = PathTree.Build(patchModels, entry => entry.Path,
-        PatchModelSearch.Text, entry => entry.Container, displayPathSelector: CompactModelPath);
+    private void ApplyPatchModelFilter()
+    {
+        var query = PatchModelSearch.Text;
+        var tree = PathTree.Build(patchModels, entry => entry.Path, query, entry => entry.Container,
+            displayPathSelector: CompactModelPath);
+        PathTreeView.SetItems(PatchModelsList, tree, query);
+    }
 
-    private void ApplyPatchAudioFilter() => PatchAudioList.ItemsSource = PathTree.Build(patchAudio, entry => entry.Path,
-        PatchAudioSearch.Text, entry => entry.Container);
+    private void ApplyPatchAudioFilter()
+    {
+        var query = PatchAudioSearch.Text;
+        var tree = PathTree.Build(patchAudio, entry => entry.Path, query, entry => entry.Container);
+        PathTreeView.SetItems(PatchAudioList, tree, query);
+    }
 
     internal static string CompactModelPath(string path)
     {
@@ -181,11 +191,13 @@ public partial class SqPackBrowser
 
     private async void PatchModelSelected(object sender, RoutedPropertyChangedEventArgs<object> e)
     {
+        if (PathTreeView.IsRestoringSelection(PatchModelsList)) return;
         if (e.NewValue is PathTreeNode { Payload: PatchMediaEntry entry }) await PatchModelPreview.OpenAsync(entry.Path);
     }
 
     private async void PatchAudioSelected(object sender, RoutedPropertyChangedEventArgs<object> e)
     {
+        if (PathTreeView.IsRestoringSelection(PatchAudioList)) return;
         if (e.NewValue is PathTreeNode { Payload: PatchMediaEntry entry }) await PatchAudioPreview.OpenAsync(entry.Path);
     }
 }

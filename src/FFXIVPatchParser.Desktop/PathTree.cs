@@ -11,6 +11,7 @@ public sealed class PathTreeNode : INotifyPropertyChanged
     public object? Payload { get; }
     public IReadOnlyList<PathTreeNode> Children { get; }
     public int LeafCount { get; }
+    internal bool InitialExpansion { get; set; }
     private bool expanded;
     public bool IsExpanded
     {
@@ -37,6 +38,19 @@ public sealed class PathTreeNode : INotifyPropertyChanged
 
 public static class PathTree
 {
+    internal static PathTreeNode? FindDirectory(IReadOnlyList<PathTreeNode> nodes, string path)
+    {
+        var end = path.IndexOf('/');
+        while (end >= 0)
+        {
+            var parent = nodes.FirstOrDefault(node => node.IsDirectory && node.FullPath.AsSpan().SequenceEqual(path.AsSpan(0, end)));
+            if (parent == null) return null;
+            nodes = parent.Children;
+            end = path.IndexOf('/', end + 1);
+        }
+        return nodes.FirstOrDefault(node => node.IsDirectory && node.FullPath == path);
+    }
+
     /// <summary>Builds an immutable hierarchy without allocating TreeViewItems. Filtered leaves retain and expand their ancestors.</summary>
     public static IReadOnlyList<PathTreeNode> Build<T>(IEnumerable<T> items, Func<T, string> pathSelector,
         string? filter = null, Func<T, string>? searchTextSelector = null, CancellationToken token = default,

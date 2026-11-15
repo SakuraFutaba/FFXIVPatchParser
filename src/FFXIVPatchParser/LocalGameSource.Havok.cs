@@ -17,9 +17,9 @@ public sealed partial class LocalGameSource
     private readonly LinkedList<(string Key, ModelAnimationClip Clip, long Bytes)> animationClips = new();
     private long animationClipBytes;
 
-    /// <summary>在后台采样并缓存最近使用的动作，重复选择时复用骨骼帧。</summary>
+    /// <summary>默认以 120 fps 采样并缓存骨骼帧；窗口呈现频率由播放器独立控制。</summary>
     public Task<ModelAnimationClip> BakeModelAnimationAsync(string modelPath, string papPath, int slot,
-        string godbertDirectory, CancellationToken token = default, int samplingRate = 60, int? previewVertexCount = null)
+        string godbertDirectory, CancellationToken token = default, int samplingRate = 120, int? previewVertexCount = null)
     {
         if (previewVertexCount is <= 0) throw new ArgumentOutOfRangeException(nameof(previewVertexCount));
         if (samplingRate is not (60 or 120)) throw new ArgumentOutOfRangeException(nameof(samplingRate));
@@ -31,7 +31,7 @@ public sealed partial class LocalGameSource
                 token.ThrowIfCancellationRequested();
                 var dll = new FileInfo(Path.GetFullPath(Path.Combine(godbertDirectory, "hkAnimationInterop.dll")));
                 if (!dll.Exists) throw new FileNotFoundException("所选目录没有 hkAnimationInterop.dll。", dll.FullName);
-                var key = $"{modelPath}|{papPath}|{slot}|{samplingRate}|{previewVertexCount}|{dll.FullName}|{dll.Length}|{dll.LastWriteTimeUtc.Ticks}";
+                var key = $"{modelPath}|{papPath}|{slot}|{samplingRate}|{dll.FullName}|{dll.Length}|{dll.LastWriteTimeUtc.Ticks}";
                 for (var node = animationClips.First; node != null; node = node.Next)
                 {
                     if (node.Value.Key != key) continue;
@@ -39,7 +39,7 @@ public sealed partial class LocalGameSource
                     animationClips.AddFirst(node);
                     return node.Value.Clip;
                 }
-                var clip = await BakeModelAnimationCoreAsync(modelPath, papPath, slot, godbertDirectory, token, samplingRate, previewVertexCount);
+                var clip = await BakeModelAnimationCoreAsync(modelPath, papPath, slot, godbertDirectory, token, samplingRate);
                 token.ThrowIfCancellationRequested();
                 // 计入矩阵、数组及名称的估计开销；限制条目数，避免大量短片段积累。
                 var bytes = 256L + clip.Frames.Length * (32L + clip.BoneNames.Length * 64L)
@@ -64,10 +64,11 @@ public sealed partial class LocalGameSource
     /// <summary>Samples monster PAP poses in an isolated x86 process using the user's Godbert installation.
     /// Native DLLs are loaded in place, never copied or distributed.</summary>
     private async Task<ModelAnimationClip> BakeModelAnimationCoreAsync(string modelPath, string papPath, int slot,
-        string godbertDirectory, CancellationToken token, int samplingRate, int? previewVertexCount)
+        string godbertDirectory, CancellationToken token, int samplingRate)
     {
         if (!OperatingSystem.IsWindows()) throw new PlatformNotSupportedException("Godbert 动作解码需要 Windows。");
-        var match = Regex.Match(modelPath, @"^chara/monster/(m\d{4})/obj/body/b\d{4}/model/", RegexOptions.CultureInvariant);
+        var gamePath = fileSystemModelContexts.GetValueOrDefault(modelPath, modelPath);
+        var match = Regex.Match(gamePath, @"^chara/monster/(m\d{4})/obj/body/b\d{4}/model/", RegexOptions.CultureInvariant);
         if (!match.Success) throw new NotSupportedException("当前仅验证怪物本体骨架；其他模型暂不支持播放。");
         var id = match.Groups[1].Value;
         if (!papPath.StartsWith($"chara/monster/{id}/animation/", StringComparison.Ordinal))
@@ -125,9 +126,6 @@ public sealed partial class LocalGameSource
         start.Environment["FFXIV_HK_OUTPUT"] = output; start.Environment["FFXIV_HK_SLOT"] = slot.ToString(System.Globalization.CultureInfo.InvariantCulture);
         start.Environment["FFXIV_HK_HELPER"] = helper;
         start.Environment["FFXIV_HK_FPS"] = samplingRate.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        // 仅预览策略允许按完整顶点缓存预算降到 60 Hz，显式采样调用保留指定频率。
-        start.Environment["FFXIV_HK_FRAME_BUDGET"] = previewVertexCount is { } vertices
-            ? (64L * 1024 * 1024 / (vertices * 24L)).ToString(System.Globalization.CultureInfo.InvariantCulture) : "-1";
         start.Environment["TEMP"] = work; start.Environment["TMP"] = work;
         using var process = Process.Start(start) ?? throw new InvalidOperationException("无法启动动作解码进程。");
         var stdout = process.StandardOutput.ReadToEndAsync(token); var stderr = process.StandardError.ReadToEndAsync(token);
@@ -146,7 +144,7 @@ public sealed partial class LocalGameSource
             throw new InvalidOperationException($"Godbert x86 动作解码失败（退出码 {process.ExitCode}）：{diagnostic}");
         using var reader = new BinaryReader(File.OpenRead(output));
         var bones = reader.ReadInt32(); var frames = reader.ReadInt32(); var duration = reader.ReadSingle(); var fps = reader.ReadSingle();
-        if (bones is < 1 or > 1024 || frames is < 1 or > 14400 || (long)bones * frames > 1_000_000 || !float.IsFinite(duration) || duration <= 0 || (fps != samplingRate && !(samplingRate == 120 && previewVertexCount != null && fps == 60)))
+        if (bones is < 1 or > 1024 || frames is < 1 or > 14400 || (long)bones * frames > 1_000_000 || !float.IsFinite(duration) || duration <= 0 || fps != samplingRate)
             throw new InvalidDataException("解码后的动作尺寸无效。");
         var names = new string[bones]; var parents = new int[bones]; var reference = new Matrix4x4[bones];
         for (var b = 0; b < bones; b++) { names[b] = reader.ReadString(); parents[b] = reader.ReadInt32(); reference[b] = ReadHavokTransform(reader); }
@@ -231,14 +229,12 @@ public static class BakeHavok {
    var clip=Fn<GetAnimation>("getAnimation")(container,slot);float duration=Fn<Duration>("getDuration")(clip);
    if(float.IsNaN(duration)||float.IsInfinity(duration)||duration<=0||duration>120)throw new Exception("Unsupported animation duration");
    float fps=int.Parse(Environment.GetEnvironmentVariable("FFXIV_HK_FPS"));int frames=Math.Max(1,(int)Math.Ceiling(duration*fps));
-   long frameBudget=long.Parse(Environment.GetEnvironmentVariable("FFXIV_HK_FRAME_BUDGET"));
-   if(fps==120 && frameBudget>=0 && (frames>frameBudget || (long)frames*bones>1000000)) { fps=60;frames=Math.Max(1,(int)Math.Ceiling(duration*fps)); }
    if((long)frames*bones>1000000)throw new Exception("Animation exceeds preview memory limit");
    using(var writer=new BinaryWriter(File.Create(Environment.GetEnvironmentVariable("FFXIV_HK_OUTPUT")))) {
     writer.Write(bones);writer.Write(frames);writer.Write(duration);writer.Write(fps);
     for(int b=0;b<bones;b++){writer.Write(names[b]);writer.Write(parents[b]);for(int j=0;j<12;j++)writer.Write(reference[b*12+j]);}
-    var pose=new float[bones*12];var sample=Fn<Pose>("getPose");
-    for(int f=0;f<frames;f++){if(sample(clip,f/fps,pose)!=bones)throw new Exception("Incomplete sampled pose");foreach(float v in pose)writer.Write(v);}
+    var pose=new float[bones*12];var poseBytes=new byte[bones*48];var sample=Fn<Pose>("getPose");
+    for(int f=0;f<frames;f++){if(sample(clip,f/fps,pose)!=bones)throw new Exception("Incomplete sampled pose");Buffer.BlockCopy(pose,0,poseBytes,0,poseBytes.Length);writer.Write(poseBytes);}
    }
   } finally { if(container!=IntPtr.Zero)Fn<Unload>("unloadAnimationContainer")(container);if(skeleton!=IntPtr.Zero)Fn<Unload>("unloadSkeleton")(skeleton);Fn<Empty>("quitHkInterop")(); }
  }

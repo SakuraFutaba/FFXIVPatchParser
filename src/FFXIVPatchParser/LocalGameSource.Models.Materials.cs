@@ -8,7 +8,16 @@ using Lumina.Models.Models;
 namespace FFXIVPatchParser;
 
 public sealed record GameModelMaterial(string Reference, string? Path, string? ShaderPackage,
-    IReadOnlyList<string> TexturePaths, GameTexture? DiffuseTexture, string? Warning);
+    IReadOnlyList<string> TexturePaths, GameTexture? DiffuseTexture, string? Warning)
+{
+    public GameMaterialAlphaMode AlphaMode { get; init; }
+    public float AlphaCutoff { get; init; }
+    public GameTexture? SurfaceTexture { get; init; }
+    public uint ShaderFlags { get; init; }
+    public IReadOnlyDictionary<uint, uint> ShaderKeys { get; init; } = new Dictionary<uint, uint>();
+}
+
+public enum GameMaterialAlphaMode { Opaque, Mask, Blend }
 
 public sealed partial class LocalGameSource
 {
@@ -61,7 +70,8 @@ public sealed partial class LocalGameSource
         return result;
     }
 
-    private GameModelMaterial ReadModelMaterial(string modelPath, string reference, int variant, CancellationToken token)
+    private GameModelMaterial ReadModelMaterial(string modelPath, string reference, int variant, CancellationToken token,
+        Func<string, GameTexture?>? textureReader = null)
     {
         string? path = null;
         string? shader = null;
@@ -72,6 +82,12 @@ public sealed partial class LocalGameSource
             var name = reference.TrimStart('/');
             var candidates = new List<string>();
             if (name.Contains('/')) candidates.Add(name);
+            if (modelPath.StartsWith("bg/", StringComparison.OrdinalIgnoreCase) ||
+                modelPath.StartsWith("bgcommon/", StringComparison.OrdinalIgnoreCase))
+            {
+                var slash = modelPath.LastIndexOf('/');
+                if (slash >= 0) candidates.Add(modelPath[..(slash + 1)] + name);
+            }
             var modelFolder = modelPath.LastIndexOf("/model/", StringComparison.Ordinal);
             if (modelFolder >= 0)
             {
@@ -110,8 +126,7 @@ public sealed partial class LocalGameSource
                 if (path == null) return new(reference, null, null, [], null, $"找不到材质 {reference}（变体 {variant}）。");
                 data = game.GetFile(path)!.Data;
             }
-            // Read only the stable MTRL header and string table. Dawntrail colorset/shader payloads
-            // differ from older clients and are deliberately not interpreted as diffuse colors.
+            // 先读取稳定的 MTRL 头与字符串表；透明设置随后解析，颜色表不作为漫反射颜色。
             if (data.Length < 16) throw new InvalidDataException("材质头不完整。");
             var stringSize = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(8));
             var shaderOffset = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(10));
@@ -128,13 +143,15 @@ public sealed partial class LocalGameSource
                 textures.Add(ModelString(strings, offset));
             }
             // A normal/mask/specular map must never be presented as a base-color map.
-            var diffuse = textures.FirstOrDefault(t => t.EndsWith("_d.tex", StringComparison.OrdinalIgnoreCase)
+            var diffuse = (textureReader == null ? null : TerritoryDiffuseSampler(data, stringStart + stringSize, textures))
+                ?? textures.FirstOrDefault(t => t.EndsWith("_d.tex", StringComparison.OrdinalIgnoreCase)
                 || t.EndsWith("_base.tex", StringComparison.OrdinalIgnoreCase));
             token.ThrowIfCancellationRequested();
-            var image = diffuse == null ? null : ReadTexture(diffuse);
-            return new(reference, path, shader, textures, image, image == null
+            var image = diffuse == null ? null : (textureReader != null ? textureReader(diffuse) : ReadTexture(diffuse));
+            var material = new GameModelMaterial(reference, path, shader, textures, image, image == null
                 ? $"{reference}：无独立漫反射纹理，使用灰模；未模拟游戏材质着色器。"
                 : $"{reference}：使用原始漫反射近似；未模拟染色、法线和游戏材质着色器。");
+            return ReadMaterialAlpha(material, data, stringStart + stringSize, token, textureReader);
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException)
         {

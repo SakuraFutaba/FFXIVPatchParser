@@ -1,30 +1,66 @@
 <Window x:Class="FFXIVPatchParser.Desktop.MainWindow" xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:FFXIVPatchParser.Desktop"
- Title="FFXIV Patch Parser" Width="1480" Height="920" MinWidth="1180" MinHeight="760" WindowStartupLocation="CenterScreen" Background="#F7F8FA">
+ xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
+ Title="FFXIV Patch Parser" Width="1480" Height="920" MinWidth="1180" MinHeight="760" WindowStartupLocation="CenterScreen" Background="#F7F8FA"
+ UseLayoutRounding="True" PreviewKeyDown="NavigationKeys">
+<shell:WindowChrome.WindowChrome>
+  <shell:WindowChrome CaptionHeight="38" ResizeBorderThickness="6" GlassFrameThickness="0" CornerRadius="0"/>
+</shell:WindowChrome.WindowChrome>
+<DockPanel x:Name="WindowContent">
+  <Border DockPanel.Dock="Top" Height="38" Background="#EBEEF3" BorderBrush="{StaticResource Border}" BorderThickness="0,0,0,1">
+    <DockPanel>
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" shell:WindowChrome.IsHitTestVisibleInChrome="True">
+        <Button Style="{StaticResource CaptionButton}" Click="MinimizeWindow" ToolTip="最小化" AutomationProperties.Name="最小化">
+          <Path Data="M 1,6 H 11" Stroke="{StaticResource Ink}"/>
+        </Button>
+        <Button x:Name="MaximizeButton" Style="{StaticResource CaptionButton}" Click="MaximizeWindow" ToolTip="最大化" AutomationProperties.Name="最大化">
+          <Path x:Name="MaximizeGlyph" Data="M 1,1 H 11 V 11 H 1 Z" Stroke="{StaticResource Ink}"/>
+        </Button>
+        <Button Style="{StaticResource CloseCaptionButton}" Click="CloseWindow" ToolTip="关闭窗口" AutomationProperties.Name="关闭窗口">
+          <Path Data="M 1,1 L 11,11 M 11,1 L 1,11" Stroke="{Binding Foreground, RelativeSource={RelativeSource AncestorType=Button}}"/>
+        </Button>
+      </StackPanel>
+      <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,0,0">
+        <Border Width="24" Height="22" Background="#253A56" CornerRadius="4" Margin="0,0,12,0">
+          <TextBlock Text="XIV" FontSize="10" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+        </Border>
+        <Button x:Name="BackButton" Style="{StaticResource HistoryButton}" Click="NavigateBack" IsEnabled="False"
+                ToolTip="后退 (Alt+←)" AutomationProperties.Name="后退" shell:WindowChrome.IsHitTestVisibleInChrome="True">
+          <Path Data="M 7,2 L 2,7 L 7,12 M 2,7 H 13" Stroke="{StaticResource Ink}" StrokeThickness="1.4"/>
+        </Button>
+        <Button x:Name="ForwardButton" Style="{StaticResource HistoryButton}" Click="NavigateForward" IsEnabled="False"
+                ToolTip="前进 (Alt+→)" AutomationProperties.Name="前进" shell:WindowChrome.IsHitTestVisibleInChrome="True">
+          <Path Data="M 7,2 L 12,7 L 7,12 M 12,7 H 1" Stroke="{StaticResource Ink}" StrokeThickness="1.4"/>
+        </Button>
+      </StackPanel>
+      <TextBlock Text="FFXIV Patch Parser" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#475467"
+                 FontSize="12" Margin="0,0,45,0"/>
+    </DockPanel>
+  </Border>
 <Grid>
   <Grid.ColumnDefinitions><ColumnDefinition Width="160"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
   <Border Background="#101C2E">
     <DockPanel>
-      <StackPanel DockPanel.Dock="Top" Margin="18,16,12,16"><TextBlock Text="XIV" Foreground="#87B5FF" FontSize="22" FontWeight="Bold"/><TextBlock Text="PATCH PARSER" Foreground="White" FontSize="12" FontWeight="SemiBold" Margin="0,4,0,0"/><TextBlock Text="补丁与数据差异工作台" Foreground="#8193AD" FontSize="11" Margin="0,12,0,0"/></StackPanel>
+      <StackPanel DockPanel.Dock="Top" Margin="18,16,12,16">
+        <TextBlock Text="XIV" Foreground="#87B5FF" FontSize="22" FontWeight="Bold"/>
+        <TextBlock Text="PATCH PARSER" Foreground="White" FontSize="12" FontWeight="SemiBold" Margin="0,4,0,0"/>
+        <TextBlock Text="补丁与数据差异工作台" Foreground="#8193AD" FontSize="11" Margin="0,12,0,0"/>
+      </StackPanel>
       <Border DockPanel.Dock="Bottom" BorderBrush="#27384F" BorderThickness="0,1,0,0" Margin="16,10,12,14" Padding="2,10,0,0">
         <StackPanel>
           <TextBlock Text="SqPack 游戏版本" Foreground="#9AAFCB" FontSize="11"/>
           <TextBlock x:Name="SqPackVersion" Text="未连接" Foreground="#EDF4FF" FontSize="11" TextTrimming="CharacterEllipsis"
                      ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}" Margin="0,3,0,0"/>
-          <TextBlock Text="Diff 补丁版本" Foreground="#9AAFCB" FontSize="11" Margin="0,10,0,0"/>
+          <TextBlock Text="Patch 补丁版本" Foreground="#9AAFCB" FontSize="11" Margin="0,10,0,0"/>
           <TextBlock x:Name="DiffVersion" Text="未选择" Foreground="#EDF4FF" FontSize="11" TextWrapping="Wrap" Margin="0,3,0,0"/>
           <TextBlock x:Name="DiffGameVersions" Foreground="#9AAFCB" FontSize="11" Margin="0,3,0,0" Visibility="Collapsed"/>
         </StackPanel>
       </Border>
       <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
         <StackPanel>
-          <Expander x:Name="PatchNavigation" Header="补丁工作区" Style="{StaticResource NavigationGroup}" IsExpanded="True">
+          <RadioButton x:Name="CatalogNav" GroupName="Nav" Style="{StaticResource Nav}" Content="补丁目录" Checked="Navigate"/>
+          <Expander x:Name="PatchNavigation" Header="Patch" Style="{StaticResource NavigationGroup}" IsExpanded="True">
             <StackPanel>
-              <RadioButton x:Name="PatchNav" GroupName="Nav" Style="{StaticResource NavChild}" Content="容器级清单" IsChecked="True" Checked="Navigate"/>
-              <RadioButton x:Name="CatalogNav" GroupName="Nav" Style="{StaticResource NavChild}" Content="补丁目录" Checked="Navigate"/>
-            </StackPanel>
-          </Expander>
-          <Expander x:Name="DiffNavigation" Header="Diff" Style="{StaticResource NavigationGroup}" IsExpanded="True">
-            <StackPanel>
+              <RadioButton x:Name="PatchNav" GroupName="Nav" Style="{StaticResource NavChild}" Content="文件系统" IsChecked="True" Checked="Navigate"/>
               <RadioButton x:Name="DiffNav" GroupName="Nav" Style="{StaticResource NavChild}" Content="表格" Checked="Navigate"/>
               <RadioButton x:Name="PatchImagesNav" GroupName="Nav" Style="{StaticResource NavChild}" Content="图片" Checked="Navigate"/>
               <RadioButton x:Name="PatchModelsNav" GroupName="Nav" Style="{StaticResource NavChild}" Content="模型" Checked="Navigate"/>
@@ -33,9 +69,11 @@
           </Expander>
           <Expander x:Name="LocalNavigation" Header="SqPack" Style="{StaticResource NavigationGroup}" IsExpanded="True">
             <StackPanel>
+              <RadioButton x:Name="LocalFilesNav" GroupName="Nav" Style="{StaticResource NavChild}" Content="文件系统" Checked="Navigate"/>
               <RadioButton x:Name="SqPackNav" GroupName="Nav" Style="{StaticResource NavChild}" Content="表格" Checked="Navigate"/>
               <RadioButton x:Name="LocalImagesNav" GroupName="Nav" Style="{StaticResource NavChild}" Content="图片" Checked="Navigate"/>
               <RadioButton x:Name="LocalModelsNav" GroupName="Nav" Style="{StaticResource NavChild}" Content="模型" Checked="Navigate"/>
+              <RadioButton x:Name="LocalMapsNav" GroupName="Nav" Style="{StaticResource NavChild}" Content="地图" Checked="Navigate"/>
               <RadioButton x:Name="LocalAudioNav" GroupName="Nav" Style="{StaticResource NavChild}" Content="音频" Checked="Navigate"/>
             </StackPanel>
           </Expander>
@@ -48,10 +86,12 @@
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <DockPanel Margin="0,0,0,10">
       <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+        <TextBox x:Name="PatchFileSearch" Style="{StaticResource SearchTextBox}" Width="295"
+                 Tag="搜索补丁文件路径或类别…" TextChanged="FilterPatchFiles" AutomationProperties.Name="搜索补丁文件"/>
         <Button x:Name="ScanMediaButton" Click="ScanCurrentMedia" Width="112" Margin="0"
                 Style="{StaticResource Primary}" IsEnabled="False" Visibility="Collapsed"/>
       </StackPanel>
-      <TextBlock x:Name="PageTitle" Text="容器级清单" FontSize="19" FontWeight="SemiBold" VerticalAlignment="Center"/>
+      <TextBlock x:Name="PageTitle" Text="Patch · 文件系统" FontSize="19" FontWeight="SemiBold" VerticalAlignment="Center"/>
     </DockPanel>
     <Grid Grid.Row="1" x:Name="PatchWorkspace" UseLayoutRounding="True">
       <Grid.ColumnDefinitions>
@@ -120,7 +160,7 @@
                 <TextBlock x:Name="CatalogInfo" Foreground="{StaticResource Muted}" Margin="0,4,0,0"/>
               </StackPanel>
             </DockPanel>
-            <TextBox Grid.Row="1" x:Name="CatalogSearch" Tag="搜索数据版本或游戏版本…" Width="470" HorizontalAlignment="Left" Margin="0,0,0,10" ToolTip="搜索数据版本或游戏构建版本" TextChanged="FilterCatalog"/>
+            <TextBox Grid.Row="1" x:Name="CatalogSearch" Style="{StaticResource SearchTextBox}" Tag="搜索数据版本或游戏版本…" Width="470" HorizontalAlignment="Left" Margin="0,0,0,10" ToolTip="搜索数据版本或游戏构建版本" TextChanged="FilterCatalog"/>
             <DataGrid Grid.Row="2" x:Name="CatalogGrid" SelectionChanged="CatalogSelected">
               <DataGrid.Columns>
                 <DataGridTextColumn Header="" Binding="{Binding Package.Badge}" Width="55"/>
@@ -159,8 +199,8 @@
       <Grid Grid.Row="1">
         <Grid.ColumnDefinitions><ColumnDefinition Width="220" MinWidth="140" MaxWidth="520"/><ColumnDefinition Width="8"/><ColumnDefinition Width="*" MinWidth="360"/></Grid.ColumnDefinitions>
         <DockPanel>
-          <TextBox x:Name="SheetSearch" Tag="搜索变化的表…" DockPanel.Dock="Top" Margin="0,0,0,6" ToolTip="搜索变化表" TextChanged="FilterSheets"/>
-          <TreeView x:Name="SheetsList" Style="{StaticResource CompactPathTree}" SelectedItemChanged="SheetSelected"
+          <TextBox x:Name="SheetSearch" Style="{StaticResource SearchTextBox}" Tag="搜索变化的表…" DockPanel.Dock="Top" Margin="0,0,0,6" ToolTip="搜索变化表" TextChanged="FilterSheets"/>
+          <TreeView x:Name="SheetsList" Style="{StaticResource CompactPathTree}" SelectedItemChanged="SheetSelected" PreviewMouseRightButtonDown="CopyDiffTableName" PreviewMouseLeftButtonDown="ClickDiffTable"
                     ScrollViewer.HorizontalScrollBarVisibility="Disabled" VirtualizingPanel.IsVirtualizing="True"
                     VirtualizingPanel.VirtualizationMode="Recycling">
             <TreeView.ItemContainerStyle>
@@ -205,12 +245,13 @@
         </DockPanel>
         <GridSplitter Grid.Column="1" Width="6" HorizontalAlignment="Center" VerticalAlignment="Stretch" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext" Background="#E4E7EC" ShowsPreview="True" ToolTip="拖动调整表目录宽度"/>
         <Grid Grid.Column="2">
-          <Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
-          <DataGrid x:Name="DiffGrid" CanUserSortColumns="False" CanUserReorderColumns="False" RowHeight="32" SelectionUnit="Cell" FrozenColumnCount="1"
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+          <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"><StackPanel x:Name="DiffTableTabStrip" Orientation="Horizontal"/></ScrollViewer>
+          <DataGrid Grid.Row="1" x:Name="DiffGrid" CanUserSortColumns="False" CanUserReorderColumns="False" RowHeight="32" SelectionUnit="Cell" FrozenColumnCount="1"
                     RowHeaderWidth="0" RowHeaderStyle="{StaticResource HiddenTableRowHeader}"
                     PreviewMouseLeftButtonUp="InspectCellClick" PreviewMouseRightButtonUp="OpenDiffCellActions" PreviewKeyDown="InspectCellKeyDown"
                     ScrollViewer.ScrollChanged="DiffGridScrolled" LostMouseCapture="DiffGridLostMouseCapture"/>
-          <TextBlock x:Name="DiffEmptyMessage" Visibility="Collapsed" Margin="12,46,12,0" VerticalAlignment="Top"
+          <TextBlock Grid.Row="1" x:Name="DiffEmptyMessage" Visibility="Collapsed" Margin="12,46,12,0" VerticalAlignment="Top"
                      Foreground="{StaticResource Muted}" TextWrapping="Wrap" IsHitTestVisible="False"/>
 
         </Grid>
@@ -229,7 +270,7 @@
         <Border Background="White" BorderBrush="#D0D7DE" BorderThickness="1" CornerRadius="6" Padding="12" Width="300">
           <StackPanel>
             <TextBlock x:Name="ColumnFilterTitle" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,8"/>
-            <TextBox x:Name="ColumnFilterInput" Tag="输入关键词，Enter 应用" KeyDown="ColumnFilterKeyDown"/>
+            <TextBox x:Name="ColumnFilterInput" Style="{StaticResource SearchTextBox}" Tag="输入关键词，Enter 应用" KeyDown="ColumnFilterKeyDown"/>
             <TextBlock Text="匹配旧值或新值；多个列条件同时满足。" Foreground="#667085" FontSize="11" Margin="0,6"/>
             <StackPanel Orientation="Horizontal"><Button Content="应用" Click="ApplyColumnFilter"/><Button Content="清除此列" Click="ClearColumnFilter"/></StackPanel>
           </StackPanel>
@@ -272,4 +313,5 @@
     <DockPanel Grid.Row="2" x:Name="MainStatusBar" Margin="0,8,0,0"><Button x:Name="CancelButton" DockPanel.Dock="Right" Content="取消" Padding="12,3" Visibility="Collapsed" Click="Cancel"/><ProgressBar x:Name="Progress" Width="110" Height="4" DockPanel.Dock="Right" Margin="12,0,12,0" Visibility="Collapsed" IsIndeterminate="True"/><TextBlock x:Name="Status" Text="就绪" Foreground="{StaticResource Muted}" FontSize="12" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/></DockPanel>
   </Grid>
 </Grid>
+</DockPanel>
 </Window>

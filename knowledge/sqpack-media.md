@@ -25,6 +25,20 @@
 
 TEX 解码后可按原始尺寸导出 PNG，保留透明通道。预览的缩放和棋盘背景只影响显示。离屏验证使用四个 BGRA 像素，往返 PNG 后 Alpha 0、128、255 都保持原值。 [PNG 导出与预览](../src/FFXIVPatchParser.Desktop/TexturePreview.xaml.cs)
 
+## Channeling 表与连线特效
+
+`Channeling.File` 保存 AVFX 的文件名主体，完整的游戏内路径是 `vfx/channeling/eff/{File}.avfx`。这类资源绘制游戏对象之间的连线特效（tether）。Pictomancy 的 `AddChanneling` 使用该路径和起止对象，FFXIVClientStructs 把 `Tether.Id` 标为 `Channeling` 的行号，并记录目标对象 ID。 [Pictomancy 的路径与连线实现](https://github.com/sourpuh/ffxiv_pictomancy/blob/master/Pictomancy/VfxRenderer.cs#L15-L68) · [FFXIVClientStructs 的 Tether 结构](https://github.com/aers/FFXIVClientStructs/blob/main/FFXIVClientStructs/FFXIV/Client/Game/Character/VfxContainer.cs#L23-L29)
+
+国服简体中文客户端 7.58 构建 `2026.11.03.0000.0000` 实测，`Channeling` 是无语言表。界面把行号放在第一列，因此第二列 `File` 对应 EXH 中索引为 0 的字符串字段。本次读取 `exd/Channeling.exh` 和 `exd/Channeling_0.exd`，为 432 行中 431 个非空值补齐路径，去重后用 Lumina 7.7.2 逐一从本地 SqPack 解包。404 个文件全部读出，且均以 AVFX 的 `XFVA` 文件头开头。 [本地表读取](../src/FFXIVPatchParser/LocalGameSource.cs) · [Lumina 按索引读取文件](https://github.com/NotAdam/Lumina/blob/master/src/Lumina/Data/Category.cs) · [AVFX 格式](https://xiv.dev/game-data/visual-effects/avfx-files)
+
+三个样本均位于该构建的 `ffxiv/080000.win32.dat0`，偏移为十六进制。实测范围是表值、路径和文件头，画面及具体战斗机制需在游戏内另行观察。
+
+| 行号 | 游戏内逻辑路径 | 容器偏移 | 解包后字节数 |
+| --- | --- | --- | --- |
+| 4 | `vfx/channeling/eff/chn_wind001f.avfx` | `0xE0B5980` | 10,796 |
+| 1、192 | `vfx/channeling/eff/chn_dark001f.avfx` | `0xE0B7580` | 10,068 |
+| 13 | `vfx/channeling/eff/chn_tankmog1f.avfx` | `0xE0A9A80` | 15,432 |
+
 ## 模型依赖与 SCD 音轨
 
 MDL 提供网格，外观和动作还依赖 IMC、材质、纹理、骨架及 PAP。真实客户端的身体、装备、怪物和头发四个 MDL 样本通过解码和离屏渲染检查。材质近似和动作采样的覆盖范围另有实测。 [模型、材质与动作](models-animation.md)

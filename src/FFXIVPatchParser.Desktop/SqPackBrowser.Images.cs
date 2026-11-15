@@ -28,7 +28,7 @@ public partial class SqPackBrowser
         var token = current.Token;
         texturePaths = null;
         imageIndexScanned = false;
-        ShowTextureTree([]);
+        ShowTextureTree([], IconSearch.Text);
         TextureTreeCount.Text = "正在读取已知图标目录…";
         try
         {
@@ -41,8 +41,8 @@ public partial class SqPackBrowser
             if (!ReferenceEquals(game, source) || closing) return;
             texturePaths = paths;
             imageIndexScanned = false;
-            ShowTextureTree(tree);
-            if (query != IconSearch.Text) FilterIcons(IconSearch, null!);
+            if (query == IconSearch.Text) ShowTextureTree(tree, query);
+            else await ApplyIconFilterAsync(debounce: false);
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         catch (Exception ex)

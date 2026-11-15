@@ -31,7 +31,7 @@ public partial class ModelPreview
         namedSelection?.Cancel();
         var raw = ModelMode.SelectedIndex == 2;
         NpcNamesButton.Visibility = raw ? Visibility.Collapsed : Visibility.Visible;
-        ModelTree.ItemsSource = null;
+        PathTreeView.Reset(ModelTree);
         ModelSearch.IsEnabled = raw ? models != null : namedModels != null;
         BrowserStatus.Text = source == null ? "请选择游戏目录" : raw ? "点击「扫描资源索引」查找目录之外的模型" : "尚未读取";
         if (ModelSearch.IsEnabled) await ApplyModelFilter();
@@ -87,7 +87,8 @@ public partial class ModelPreview
             models = null;
             if (ModelMode.SelectedIndex == 2)
             {
-                ModelTree.ItemsSource = null;
+                filterCancellation?.Cancel();
+                PathTreeView.Reset(ModelTree);
                 ModelSearch.IsEnabled = false;
             }
             BrowserStatus.Text = $"合并后共 {count:N0} 条候选路径。点击「扫描资源索引」按本地索引匹配。";
@@ -130,10 +131,10 @@ public partial class ModelPreview
             try { variant = await Task.Run(() => game.ResolveNamedModelMaterialVariant(entry, pending.Token), pending.Token); }
             catch (Exception ex) when (ex is IOException or ArgumentException or NotSupportedException) { warning = ex.Message; }
             pending.Token.ThrowIfCancellationRequested();
-            if (!ReferenceEquals(ModelTree.SelectedItem, selected)) return;
+            if (!PathTreeView.IsCurrentSelection(ModelTree, selected)) return;
             MaterialVariant.Text = variant.ToString(CultureInfo.InvariantCulture);
             await OpenAsync(entry.Path);
-            if (!pending.IsCancellationRequested && ReferenceEquals(ModelTree.SelectedItem, selected))
+            if (!pending.IsCancellationRequested && PathTreeView.IsCurrentSelection(ModelTree, selected))
             {
                 var nameRow = entry.NameRowId is { } id ? $" · 名称行 #{id}" : "";
                 ModelEntryInfo.Text = $"{entry.Name} · {entry.SourceSheet} #{entry.SourceRowId} → ModelChara #{entry.ModelCharaId} · v{entry.Variant:D4}"

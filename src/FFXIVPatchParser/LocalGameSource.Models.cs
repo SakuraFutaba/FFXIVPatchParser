@@ -26,6 +26,10 @@ public sealed partial class LocalGameSource
         => ReadModelPreview(path, 1, token).Meshes;
 
     public GameModelPreview ReadModelPreview(string path, int materialVariant = 1, CancellationToken token = default)
+        => ReadModelPreviewCore(path, materialVariant, true, token);
+
+    private GameModelPreview ReadModelPreviewCore(string path, int materialVariant, bool includeMaterials, CancellationToken token, int preferredLod = 0,
+        Func<string, GameModelMaterial>? materialReader = null)
     {
         if (materialVariant is < 1 or > 9999) throw new ArgumentOutOfRangeException(nameof(materialVariant));
         path = path.Trim().Replace('\\', '/').TrimStart('/');
@@ -45,7 +49,10 @@ public sealed partial class LocalGameSource
         var strings = reader.ReadBytes((int)stringTableSize);
         var modelHeader = reader.ReadStructure<MdlStructs.ModelHeader>();
         for (var i = 0; i < modelHeader.ElementIdCount; i++) MdlStructs.ElementIdStruct.Read(reader);
-        var lod = reader.ReadStructuresAsArray<MdlStructs.LodStruct>(3)[0];
+        var lods = reader.ReadStructuresAsArray<MdlStructs.LodStruct>(3);
+        var lodIndex = Math.Min(preferredLod, header.LodCount - 1);
+        while (lodIndex > 0 && (lods[lodIndex].MeshCount == 0 || header.VertexBufferSize[lodIndex] == 0)) lodIndex--;
+        var lod = lods[lodIndex];
         if (modelHeader.ExtraLodEnabled) reader.ReadStructuresAsArray<MdlStructs.ExtraLodStruct>(3);
 
         var meshEnd = lod.MeshIndex + lod.MeshCount;
@@ -61,8 +68,8 @@ public sealed partial class LocalGameSource
         var boneNames = reader.ReadUInt32Array(modelHeader.BoneCount).Select(offset => ModelString(strings, offset)).ToArray();
         var bonePalettes = ReadBonePalettes(reader, header.Version, modelHeader.BoneTableCount, boneNames.Length);
 
-        var vertexBuffer = ModelBuffer(model.Data, header.VertexOffset[0], header.VertexBufferSize[0]);
-        var indexBuffer = ModelBuffer(model.Data, header.IndexOffset[0], header.IndexBufferSize[0]);
+        var vertexBuffer = ModelBuffer(model.Data, header.VertexOffset[lodIndex], header.VertexBufferSize[lodIndex]);
+        var indexBuffer = ModelBuffer(model.Data, header.IndexOffset[lodIndex], header.IndexBufferSize[lodIndex]);
         var meshes = new List<GameModelMesh>(lod.MeshCount);
         var vertexCount = 0;
         var indexCount = 0L;
@@ -129,9 +136,11 @@ public sealed partial class LocalGameSource
             meshes.Add(new(positions, indices) { Normals = normals, TextureCoordinates = uv, MaterialIndex = mesh.MaterialIndex,
                 BoneIndices = blendIndices, BoneWeights = blendWeights });
         }
-        if (meshes.Count == 0) throw new InvalidDataException("模型的 LOD 0 没有可显示的主网格。");
+        if (meshes.Count == 0) throw new InvalidDataException($"模型的 LOD {lodIndex} 没有可显示的主网格。");
         var warnings = new List<string>();
-        var materials = materialNames.Select(name => ReadModelMaterial(path, name, materialVariant, token)).ToArray();
+        var materials = includeMaterials
+            ? materialNames.Select(name => materialReader?.Invoke(name) ?? ReadModelMaterial(fileSystemModelContexts.GetValueOrDefault(path, path), name, materialVariant, token)).ToArray()
+            : Array.Empty<GameModelMaterial>();
         foreach (var material in materials)
             if (material.Warning != null) warnings.Add(material.Warning);
         if (boneNames.Length > 0) warnings.Add("默认显示绑定姿势；怪物可使用本机 Godbert 解码器播放已验证的 PAP 动作。");

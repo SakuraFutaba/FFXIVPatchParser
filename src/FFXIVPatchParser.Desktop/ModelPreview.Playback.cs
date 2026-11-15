@@ -16,6 +16,13 @@ public partial class ModelPreview
     private int lastFrame = -1;
     private Point3DCollection[][]? poseCache;
     private bool framePending;
+    private LocalGameSource.ModelSkinningBinding? skinningBinding;
+    private readonly Dictionary<int, Point3DCollection[]> recentPoses = new();
+    private readonly Queue<int> recentPoseOrder = new();
+    private int recentPoseLimit;
+    private double playbackOffset;
+    private bool updatingPosition;
+    private double lastTimeLabelPosition = double.NegativeInfinity;
     private int playbackGeneration;
     private bool settingPlaybackSlots;
     private double? renderClockOrigin;
@@ -44,14 +51,16 @@ public partial class ModelPreview
             {
                 playbackTime.Stop();
                 CompositionTarget.Rendering -= PlaybackTick;
-                PlaybackStatus.Text = "已暂停";
+                UpdatePlaybackPosition(PlaybackPosition.Value);
+                UpdatePlaybackStatus("已暂停");
             }
             else
             {
+                playbackOffset = PlaybackPosition.Value;
                 renderClockOrigin = null;
-                playbackTime.Start();
+                playbackTime.Restart();
                 CompositionTarget.Rendering += PlaybackTick;
-                PlaybackStatus.Text = "循环播放";
+                UpdatePlaybackStatus("循环播放");
             }
             UpdatePlaybackControls();
             return;
@@ -85,15 +94,17 @@ public partial class ModelPreview
             pending.Token.ThrowIfCancellationRequested();
             if (!IsVisible || !ReferenceEquals(scene, preview) || !ReferenceEquals(loadedAction, action)) return;
             // 短片段在启动前准备所有帧，避免播放时后台任务切换占用每帧的时间预算。
-            var cacheAllFrames = (long)preview.Vertices * 24 * clip.Frames.Length <= 64L * 1024 * 1024;
+            var cacheAllFrames = (preview.Meshes.Sum(mesh => (long)mesh.Geometry.Positions.Count) * 24L + preview.Meshes.Count * 128L) * clip.Frames.Length <= 64L * 1024 * 1024;
             PlaybackStatus.Text = "正在准备动作帧…";
+            LocalGameSource.ModelSkinningBinding? binding = null;
             var prepared = await Task.Run(() =>
             {
+                binding = LocalGameSource.CreateModelSkinningBinding(preview.SourceModel, clip);
                 var frames = new Point3DCollection[cacheAllFrames ? clip.Frames.Length : 1][];
                 for (var frame = 0; frame < frames.Length; frame++)
                 {
                     pending.Token.ThrowIfCancellationRequested();
-                    frames[frame] = PreparePose(preview, clip, frame);
+                    frames[frame] = PreparePose(preview, clip, frame, binding);
                 }
                 return frames;
             }, pending.Token);
@@ -106,6 +117,11 @@ public partial class ModelPreview
                 return geometry;
             }).ToArray();
             playbackClip = clip;
+            skinningBinding = binding;
+            recentPoseLimit = (int)Math.Max(1, 64L * 1024 * 1024 / (preview.Meshes.Sum(mesh => (long)mesh.Geometry.Positions.Count) * 24L + preview.Meshes.Count * 128L));
+            PlaybackPosition.Maximum = clip.Duration;
+            PlaybackPosition.IsEnabled = true;
+            UpdatePlaybackPosition(0);
             // 仅为能完整容纳的片段缓存顶点，避免长动作无限占用内存。
             poseCache = cacheAllFrames ? prepared : null;
             ApplyPose(prepared[0]);
@@ -113,7 +129,7 @@ public partial class ModelPreview
             lastFrame = 0;
             playbackTime.Restart();
             CompositionTarget.Rendering += PlaybackTick;
-            PlaybackStatus.Text = $"{slot.Name} · {clip.Duration:0.00} 秒 · {clip.FramesPerSecond:0} fps · 循环播放";
+            UpdatePlaybackStatus("循环播放");
         }
         catch (OperationCanceledException) when (pending.IsCancellationRequested) { }
         catch (Exception ex)
@@ -133,8 +149,8 @@ public partial class ModelPreview
 
     private async void PlaybackTick(object? sender, EventArgs e)
     {
-        if (framePending || !playbackTime.IsRunning || scene is not { } preview || playbackClip is not { } clip) return;
-        var seconds = playbackTime.Elapsed.TotalSeconds;
+        if (!playbackTime.IsRunning || scene is not { } preview || playbackClip is not { } clip) return;
+        var seconds = playbackOffset + playbackTime.Elapsed.TotalSeconds;
         if (e is RenderingEventArgs rendering)
         {
             // 使用预计呈现时间，避免 UI 回调排队抖动使相邻采样帧被重复或跳过。
@@ -142,17 +158,22 @@ public partial class ModelPreview
             seconds = Math.Max(0, rendering.RenderingTime.TotalSeconds - renderClockOrigin.Value);
         }
         var elapsed = seconds % clip.Duration;
+        if (!PlaybackPosition.IsMouseCaptureWithin) UpdatePlaybackPosition(elapsed, forceTimeLabel: false);
+        if (framePending) return;
         var frame = Math.Clamp((int)(elapsed * clip.FramesPerSecond), 0, clip.Frames.Length - 1);
         if (frame == lastFrame) return;
         var generation = playbackGeneration;
         framePending = true;
         try
         {
-            var positions = poseCache?[frame];
+            var positions = poseCache?[frame] ?? recentPoses.GetValueOrDefault(frame);
             if (positions == null)
-                positions = await Task.Run(() => PreparePose(preview, clip, frame));
+            {
+                var binding = skinningBinding;
+                positions = await Task.Run(() => PreparePose(preview, clip, frame, binding));
+            }
             if (generation != playbackGeneration || !playbackTime.IsRunning) return;
-            if (poseCache != null) poseCache[frame] = positions;
+            RememberPose(frame, positions);
             ApplyPose(positions);
             lastFrame = frame;
         }
@@ -170,17 +191,18 @@ public partial class ModelPreview
         }
     }
 
-    private static Point3DCollection[] PreparePose(PreviewScene preview, ModelAnimationClip clip, int frame)
+    private static Point3DCollection[] PreparePose(PreviewScene preview, ModelAnimationClip clip, int frame, LocalGameSource.ModelSkinningBinding? binding = null)
     {
-        var meshPositions = LocalGameSource.SkinModelFrame(preview.SourceModel, clip, frame);
+        var meshPositions = binding?.SkinFrame(frame) ?? LocalGameSource.SkinModelFrame(preview.SourceModel, clip, frame);
         var result = new Point3DCollection[meshPositions.Length];
         for (var mesh = 0; mesh < result.Length; mesh++)
         {
             var vertices = meshPositions[mesh];
-            var points = new Point3D[vertices.Length];
-            for (var i = 0; i < vertices.Length; i++)
+            var sources = preview.Meshes[mesh].Sources;
+            var points = new Point3D[sources?.Length ?? vertices.Length];
+            for (var i = 0; i < points.Length; i++)
             {
-                var vertex = vertices[i];
+                var vertex = sources == null ? vertices[i] : sources[i].Position(vertices);
                 points[i] = new Point3D((vertex.X - preview.Center.X) * preview.Scale,
                     (vertex.Y - preview.Center.Y) * preview.Scale, (vertex.Z - preview.Center.Z) * preview.Scale);
             }
@@ -189,6 +211,62 @@ public partial class ModelPreview
             result[mesh] = positions;
         }
         return result;
+    }
+
+    private void RememberPose(int frame, Point3DCollection[] positions)
+    {
+        if (poseCache != null || recentPoses.ContainsKey(frame)) return;
+        while (recentPoses.Count >= recentPoseLimit && recentPoseOrder.TryDequeue(out var oldest))
+            recentPoses.Remove(oldest);
+        recentPoses.Add(frame, positions);
+        recentPoseOrder.Enqueue(frame);
+    }
+
+    private void UpdatePlaybackStatus(string state)
+    {
+        if (playbackClip is not { } clip) return;
+        var name = (PlaybackSlot.SelectedItem as GameAnimationSlot)?.Name ?? "动作";
+        PlaybackStatus.Text = $"{name} · {clip.Duration:0.00} 秒 · 采样 {clip.FramesPerSecond:0} fps · {state}";
+        PlaybackStatus.ToolTip = "动作采样率与窗口刷新率分别计算；实际呈现受显示器、WPF 和模型开销影响。";
+    }
+
+    private void UpdatePlaybackPosition(double seconds, bool forceTimeLabel = true)
+    {
+        updatingPosition = true;
+        try { PlaybackPosition.Value = seconds; }
+        finally { updatingPosition = false; }
+        // 滑块跟随渲染时钟，时间文字单独限频，减少文本布局。
+        if (!forceTimeLabel && Math.Abs(seconds - lastTimeLabelPosition) < 0.1) return;
+        lastTimeLabelPosition = seconds;
+        PlaybackPositionText.Text = $"{seconds:0.00} / {playbackClip?.Duration ?? 0:0.00} 秒";
+    }
+
+    private void SeekAnimation(object sender, RoutedPropertyChangedEventArgs<double> e)
+    {
+        if (updatingPosition || playbackClip is not { } clip || scene is not { } preview) return;
+        var running = playbackTime.IsRunning;
+        playbackOffset = Math.Clamp(e.NewValue, 0, clip.Duration);
+        playbackTime.Reset();
+        if (running) playbackTime.Start();
+        renderClockOrigin = null;
+        // 使跳转前尚未完成的后台帧失效；保持原来的播放或暂停状态。
+        playbackGeneration++;
+        framePending = false;
+        var frame = Math.Clamp((int)(playbackOffset * clip.FramesPerSecond), 0, clip.Frames.Length - 1);
+        try
+        {
+            var positions = poseCache?[frame] ?? recentPoses.GetValueOrDefault(frame)
+                ?? PreparePose(preview, clip, frame, skinningBinding);
+            RememberPose(frame, positions);
+            ApplyPose(positions);
+            lastFrame = frame;
+            UpdatePlaybackPosition(playbackOffset);
+        }
+        catch (Exception ex)
+        {
+            StopPlayback();
+            PlaybackStatus.Text = "跳转失败 · " + ex.Message;
+        }
     }
 
     private void ApplyPose(Point3DCollection[] positions)
@@ -227,6 +305,18 @@ public partial class ModelPreview
         playbackGeneration++;
         framePending = false;
         poseCache = null;
+        skinningBinding = null;
+        recentPoses.Clear();
+        recentPoseOrder.Clear();
+        playbackOffset = 0;
+        if (PlaybackPosition != null)
+        {
+            PlaybackPosition.IsEnabled = false;
+            updatingPosition = true;
+            try { PlaybackPosition.Value = 0; }
+            finally { updatingPosition = false; }
+            PlaybackPositionText.Text = "0.00 / 0.00 秒";
+        }
         playbackTime.Reset();
         renderClockOrigin = null;
         playbackClip = null;

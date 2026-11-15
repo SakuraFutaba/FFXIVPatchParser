@@ -19,16 +19,13 @@ public partial class ModelPreview : UserControl
     private ResourceChoiceItem[]? actions;
     private string? requestedActionPath;
     private PreviewScene? scene;
-    private Point? dragPosition;
-    private MouseButton dragButton;
-    private Vector3D pan;
-    private double yaw, pitch, zoom;
+    private readonly PreviewCameraController camera;
 
     public ModelPreview()
     {
         InitializeComponent();
         SetSourceStatus();
-        ResetCamera();
+        camera = new(ModelSurface, ModelViewport, ViewCamera, 0.4, 0.2);
     }
 
     public bool ShowBrowser
@@ -38,11 +35,12 @@ public partial class ModelPreview : UserControl
         {
             Browser.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
             ModelPath.IsReadOnly = !value;
-            ModelPath.Tag = value ? "输入 SqPack 内的 .mdl 路径…" : "选择补丁模型候选…";
+            ModelPath.Tag = value ? "输入 SqPack 内的 .mdl 路径…" : "选择模型文件…";
             ModelPath.ToolTip = value ? "例如 chara/human/c0101/obj/hair/h0001/model/c0101h0001_hir.mdl" : null;
             LoadButton.Content = value ? "读取模型" : "重新读取";
             UpdateLoadButton();
             if (scene is null && loadCancellation is null) EmptyViewport.Text = EmptyMessage;
+            if (value) StartCatalogueIfVisible();
         }
     }
 
@@ -57,7 +55,7 @@ public partial class ModelPreview : UserControl
         try { ModelMode.SelectedIndex = 0; }
         finally { changingCatalogueMode = false; }
         NpcNamesButton.Visibility = Visibility.Visible;
-        ModelTree.ItemsSource = null;
+        PathTreeView.Reset(ModelTree);
         ModelSearch.Clear();
         ModelSearch.IsEnabled = false;
         ModelPath.Clear();
@@ -76,12 +74,13 @@ public partial class ModelPreview : UserControl
         SetModelStatus("");
     }
 
-    private string EmptyMessage => source is null ? "请选择游戏目录" : ShowBrowser ? "选择或输入模型路径" : "选择补丁模型候选";
+    private string EmptyMessage => source is null ? "请选择游戏目录" : ShowBrowser ? "选择或输入模型路径" : "选择模型文件";
 
     private void UpdateLoadButton() => LoadButton.IsEnabled = source is not null && (ShowBrowser || ModelPath.Text.Length != 0);
 
     private void CancelWork()
     {
+        shaderRequest?.Cancel();
         scanCancellation?.Cancel();
         filterCancellation?.Cancel();
         loadCancellation?.Cancel();
@@ -103,6 +102,15 @@ public partial class ModelPreview : UserControl
             if (PlaybackStart != null) StopPlayback();
         }
         else StartCatalogueIfVisible();
+    }
+
+    internal void CancelFileOpen() => loadCancellation?.Cancel();
+    internal bool IsPreviewingPath(string path) => scene?.Path == path;
+
+    internal Task OpenIndexedFileAsync(string path)
+    {
+        MaterialVariant.Text = "1";
+        return OpenAsync(path);
     }
 
     public async Task OpenAsync(string path)
@@ -172,6 +180,7 @@ public partial class ModelPreview : UserControl
 
     private async void ModelSelected(object sender, RoutedPropertyChangedEventArgs<object> e)
     {
+        if (PathTreeView.IsRestoringSelection(ModelTree)) return;
         if (e.NewValue is PathTreeNode { Payload: SqPackModelLocation model }) await OpenAsync(model.Path);
         else if (e.NewValue is PathTreeNode { Payload: NamedModelEntry named } node) await OpenNamedModel(named, node);
     }
@@ -235,7 +244,7 @@ public partial class ModelPreview : UserControl
                     displayPathSelector: SqPackBrowser.CompactModelPath)
                 : BuildNamedTree(namedCatalog!, mode == 1, query, token), token);
             token.ThrowIfCancellationRequested();
-            ModelTree.ItemsSource = tree;
+            PathTreeView.SetItems(ModelTree, tree, query);
             var count = mode == 2 ? rawCatalog!.Count : namedCatalog!.Count;
             BrowserStatus.Text = $"{tree.Sum(node => node.LeafCount):N0} / {count:N0} 个模型条目";
         }
@@ -262,18 +271,20 @@ public partial class ModelPreview : UserControl
         selectedNamedModel = null;
         ModelEntryInfo.Text = "";
         ModelTableLinks.Visibility = Visibility.Collapsed;
-        if (ModelSurface.IsMouseCaptured) ModelSurface.ReleaseMouseCapture();
+        camera.SetBounds(Rect3D.Empty, Rect3D.Empty);
         ModelSurface.Cursor = Cursors.Arrow;
         ModelVisual.Content = null;
         ResetButton.IsEnabled = UseTextures.IsEnabled = false;
         Inspector.Visibility = CameraHelp.Visibility = Visibility.Collapsed;
         EmptyViewport.Visibility = Visibility.Visible;
         MaterialChoice.ItemsSource = null;
+        ClearMaterialShader();
         TextureChoice.ItemsSource = null;
         TextureImage.Source = null;
         BoneNames.Clear();
-        ActionList.IsExpanded = false;
+        ActionList.IsExpanded = true;
         ActionChoice.ItemsSource = null;
+        PreviousAction.IsEnabled = NextAction.IsEnabled = false;
         ActionChoice.IsEnabled = ActionFilter.IsEnabled = false;
         ActionFilter.Clear();
         ActionPath.Clear();
@@ -308,12 +319,15 @@ public partial class ModelPreview : UserControl
         if (preview.Warnings.Count != 0)
             ModelInfo.ToolTip = ModelInfo.Text + Environment.NewLine + string.Join(Environment.NewLine, preview.Warnings);
 
-        ResetCamera();
+        var bounds = Rect3D.Empty;
+        foreach (var mesh in preview.Meshes) bounds.Union(mesh.Geometry.Bounds);
+        camera.SetBounds(bounds, bounds);
         Inspector.Visibility = CameraHelp.Visibility = Visibility.Visible;
         EmptyViewport.Visibility = Visibility.Collapsed;
         ResetButton.IsEnabled = true;
         ModelSurface.Cursor = Cursors.SizeAll;
         StartDefaultIdle();
+        ActionListExpanded(ActionList, new RoutedEventArgs());
     }
 
     private void SetModelStatus(string message, bool error = false)
@@ -330,17 +344,26 @@ public partial class ModelPreview : UserControl
         if (scene is not { } preview) return;
         var materialIndex = (MaterialChoice.SelectedItem as MaterialChoiceItem)?.Index ?? -1;
         var group = new Model3DGroup();
+        var withAlpha = new List<GeometryModel3D>();
         for (var i = 0; i < preview.Meshes.Count; i++)
         {
             var mesh = preview.Meshes[i];
             if (materialIndex >= 0 && materialIndex != mesh.MaterialIndex) continue;
             var material = GreyMaterial;
+            var usesAlpha = false;
             if (UseTextures.IsChecked == true && mesh.Geometry.TextureCoordinates.Count != 0
-                && mesh.MaterialIndex >= 0 && mesh.MaterialIndex < preview.Materials.Count)
-                material = preview.Materials[mesh.MaterialIndex].Surface ?? GreyMaterial;
+                && mesh.MaterialIndex >= 0 && mesh.MaterialIndex < preview.Materials.Count
+                && preview.Materials[mesh.MaterialIndex] is { Surface: not null } textured)
+            {
+                material = textured.Surface;
+                usesAlpha = textured.Info.AlphaMode != GameMaterialAlphaMode.Opaque;
+            }
             var geometry = animatedGeometry?[i] ?? mesh.Geometry;
-            group.Children.Add(new GeometryModel3D(geometry, material) { BackMaterial = material });
+            var model = new GeometryModel3D(geometry, material) { BackMaterial = material };
+            if (usesAlpha) withAlpha.Add(model);
+            else group.Children.Add(model);
         }
+        foreach (var model in withAlpha) group.Children.Add(model);
         if (animatedGeometry == null) group.Freeze();
         ModelVisual.Content = group;
     }
@@ -354,6 +377,7 @@ public partial class ModelPreview : UserControl
         TextureChoice.Visibility = TextureImage.Visibility = Visibility.Collapsed;
         TextureImage.Source = null;
         TextureStatus.Text = "";
+        ClearMaterialShader();
         if (choice.Index < 0)
         {
             var loaded = preview.Materials.Count(material => material.Surface is not null);
@@ -362,6 +386,7 @@ public partial class ModelPreview : UserControl
         }
 
         var material = preview.Materials[choice.Index].Info;
+        if (material.ShaderPackage is { Length: > 0 }) ShaderInspector.Visibility = Visibility.Visible;
         MaterialDetails.Text = string.Join(Environment.NewLine,
             new[] { material.Path ?? material.Reference, material.ShaderPackage, material.Warning }.Where(value => !string.IsNullOrEmpty(value)));
         if (material.TexturePaths.Count == 0) return;
@@ -450,6 +475,7 @@ public partial class ModelPreview : UserControl
         ActionChoice.ItemsSource = filtered;
         SyncActionChoice();
         ActionChoice.IsEnabled = filtered.Length > 0;
+        PreviousAction.IsEnabled = NextAction.IsEnabled = filtered.Length > 1;
         ActionDiscoveryStatus.Text = actions.Length == 0 ? "未找到本地动作候选，可输入路径。" : $"{filtered.Length:N0} / {actions.Length:N0} 个本地候选";
     }
 
@@ -523,15 +549,21 @@ public partial class ModelPreview : UserControl
         }
     }
 
-    private void SelectPreviousPlaybackSlot(object sender, RoutedEventArgs e) => SelectAdjacentPlaybackSlot(-1);
+    private void SelectPreviousAction(object sender, RoutedEventArgs e) => SelectAdjacent(ActionChoice, -1);
 
-    private void SelectNextPlaybackSlot(object sender, RoutedEventArgs e) => SelectAdjacentPlaybackSlot(1);
+    private void SelectNextAction(object sender, RoutedEventArgs e) => SelectAdjacent(ActionChoice, 1);
 
-    private void SelectAdjacentPlaybackSlot(int direction)
+    private void SelectPreviousPlaybackSlot(object sender, RoutedEventArgs e) => SelectAdjacent(PlaybackSlot, -1);
+
+    private void SelectNextPlaybackSlot(object sender, RoutedEventArgs e) => SelectAdjacent(PlaybackSlot, 1);
+
+    private static void SelectAdjacent(ComboBox picker, int direction)
     {
-        var count = PlaybackSlot.Items.Count;
+        var count = picker.Items.Count;
         if (count < 2) return;
-        PlaybackSlot.SelectedIndex = (PlaybackSlot.SelectedIndex + direction + count) % count;
+        var index = picker.SelectedIndex;
+        if (index < 0) index = direction < 0 ? 0 : count - 1;
+        picker.SelectedIndex = (index + direction + count) % count;
     }
 
     private void ClearActionMetadata()
@@ -557,9 +589,17 @@ public partial class ModelPreview : UserControl
         var center = new Point3D(bounds.X, bounds.Y, bounds.Z) + size / 2;
         var scale = 2 / size.Length;
         var meshes = new List<PreviewMesh>(preview.Meshes.Count);
-        foreach (var mesh in preview.Meshes)
+        foreach (var sourceMesh in preview.Meshes)
         {
             token.ThrowIfCancellationRequested();
+            var mesh = sourceMesh;
+            PreviewAlphaGeometry.VertexSource[]? sources = null;
+            if (mesh.TextureCoordinates.Length == mesh.Positions.Length && mesh.MaterialIndex >= 0
+                && mesh.MaterialIndex < preview.Materials.Count
+                && preview.Materials[mesh.MaterialIndex] is { SurfaceTexture: { } surface } material)
+            {
+                (mesh, sources) = PreviewAlphaGeometry.ClipAnimated(mesh, surface, PreviewSurfaceMaterial.CutoffByte(material), token);
+            }
             var positions = new Point3DCollection(mesh.Positions.Length);
             foreach (var position in mesh.Positions)
                 positions.Add(new Point3D() + (new Point3D(position.X, position.Y, position.Z) - center) * scale);
@@ -570,14 +610,15 @@ public partial class ModelPreview : UserControl
             if (mesh.TextureCoordinates.Length == mesh.Positions.Length)
                 geometry.TextureCoordinates = new PointCollection(mesh.TextureCoordinates.Select(uv => new Point(uv.X, uv.Y)));
             geometry.Freeze();
-            meshes.Add(new(geometry, mesh.MaterialIndex));
+            meshes.Add(new(geometry, mesh.MaterialIndex, sources));
         }
 
         var materials = new List<PreviewMaterial>(preview.Materials.Count);
         foreach (var material in preview.Materials)
         {
             token.ThrowIfCancellationRequested();
-            materials.Add(new(material, material.DiffuseTexture is { } diffuse ? CreateSurfaceMaterial(diffuse) : null));
+            materials.Add(new(material, (material.SurfaceTexture ?? material.DiffuseTexture) is { } diffuse
+                ? PreviewSurfaceMaterial.Create(diffuse, material.AlphaMode, PreviewSurfaceMaterial.CutoffByte(material)) : null));
         }
 
         return new(preview.Path, meshes, materials, preview.BoneNames, preview.Warnings,
@@ -592,22 +633,6 @@ public partial class ModelPreview : UserControl
         return material;
     }
 
-    private static DiffuseMaterial CreateSurfaceMaterial(GameTexture texture)
-    {
-        // Model color textures may use alpha as a shader mask. Keep the approximate preview surface opaque.
-        var image = CreateBitmap(texture, PixelFormats.Bgr32);
-        var brush = new ImageBrush(image)
-        {
-            Stretch = Stretch.Fill,
-            TileMode = TileMode.Tile,
-            ViewportUnits = BrushMappingMode.Absolute,
-            Viewport = new Rect(0, 0, 1, 1)
-        };
-        var material = new DiffuseMaterial(brush);
-        material.Freeze();
-        return material;
-    }
-
     private static BitmapSource CreateBitmap(GameTexture texture, PixelFormat format)
     {
         var bitmap = BitmapSource.Create(texture.Width, texture.Height, 96, 96, format, null, texture.Bgra32, checked(texture.Width * 4));
@@ -615,80 +640,9 @@ public partial class ModelPreview : UserControl
         return bitmap;
     }
 
-    private void ResetView(object sender, RoutedEventArgs e) => ResetCamera();
+    private void ResetView(object sender, RoutedEventArgs e) => camera.Reset();
 
-    private void ResetCamera()
-    {
-        yaw = 0.4;
-        pitch = 0.2;
-        zoom = 1;
-        pan = new Vector3D();
-        UpdateCamera();
-    }
-
-    private void ResizeViewport(object sender, SizeChangedEventArgs e) => UpdateCamera();
-
-    private Vector3D CameraDirection => new(Math.Sin(yaw) * Math.Cos(pitch), Math.Sin(pitch), Math.Cos(yaw) * Math.Cos(pitch));
-
-    private void UpdateCamera()
-    {
-        if (ModelViewport is null || ViewCamera is null || ModelViewport.ActualWidth <= 0 || ModelViewport.ActualHeight <= 0) return;
-        var direction = CameraDirection;
-        ViewCamera.Position = new Point3D() + pan + direction * 4;
-        ViewCamera.LookDirection = -direction;
-        ViewCamera.Width = 2.2 * Math.Max(1, ModelViewport.ActualWidth / ModelViewport.ActualHeight) / zoom;
-    }
-
-    private void StartDrag(object sender, MouseButtonEventArgs e)
-    {
-        if (scene is null || dragPosition is not null || e.ChangedButton is not (MouseButton.Left or MouseButton.Middle or MouseButton.Right)
-            || !ModelSurface.CaptureMouse()) return;
-        dragPosition = e.GetPosition(ModelSurface);
-        dragButton = e.ChangedButton;
-        e.Handled = true;
-    }
-
-    private void DragModel(object sender, MouseEventArgs e)
-    {
-        if (dragPosition is not { } previous) return;
-        var current = e.GetPosition(ModelSurface);
-        var delta = current - previous;
-        dragPosition = current;
-        if (dragButton == MouseButton.Left)
-        {
-            yaw -= delta.X * 0.01;
-            pitch = Math.Clamp(pitch + delta.Y * 0.01, -1.5, 1.5);
-        }
-        else if (ModelViewport.ActualWidth > 0)
-        {
-            var direction = CameraDirection;
-            var right = Vector3D.CrossProduct(new Vector3D(0, 1, 0), direction);
-            right.Normalize();
-            var up = Vector3D.CrossProduct(direction, right);
-            pan += (-delta.X * right + delta.Y * up) * (ViewCamera.Width / ModelViewport.ActualWidth);
-        }
-        UpdateCamera();
-        e.Handled = true;
-    }
-
-    private void EndDrag(object sender, MouseButtonEventArgs e)
-    {
-        if (!ModelSurface.IsMouseCaptured || e.ChangedButton != dragButton) return;
-        ModelSurface.ReleaseMouseCapture();
-        e.Handled = true;
-    }
-
-    private void StopDrag(object sender, MouseEventArgs e) => dragPosition = null;
-
-    private void ZoomWithWheel(object sender, MouseWheelEventArgs e)
-    {
-        if (scene is null || e.Delta == 0) return;
-        zoom = Math.Clamp(zoom * Math.Pow(1.2, e.Delta / 120.0), 0.15, 20);
-        UpdateCamera();
-        e.Handled = true;
-    }
-
-    private sealed record PreviewMesh(MeshGeometry3D Geometry, int MaterialIndex);
+    private sealed record PreviewMesh(MeshGeometry3D Geometry, int MaterialIndex, PreviewAlphaGeometry.VertexSource[]? Sources);
     private sealed record PreviewMaterial(GameModelMaterial Info, DiffuseMaterial? Surface);
     private sealed record PreviewScene(string Path, IReadOnlyList<PreviewMesh> Meshes, IReadOnlyList<PreviewMaterial> Materials,
         IReadOnlyList<string> BoneNames, IReadOnlyList<string> Warnings, int Vertices, int Triangles,

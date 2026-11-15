@@ -10,11 +10,10 @@ internal static class TableColumnSizing
     private static readonly System.Runtime.CompilerServices.ConditionalWeakTable<DataGridColumn, WidthState> widths = new();
     private sealed record WidthState(double Value);
 
-    // 重建关联显示时保留滚动位置与手调列宽；自动列宽继续跟随新加载的数据。
-    public static Action Capture(DataGrid grid, bool preserve)
+    public static Action Capture(DataGrid grid, bool preserveScroll, bool preserveWidths = true)
     {
-        if (!preserve) return () => { };
-        var manual = grid.Columns.Select((column, index) => (column, key: ColumnKey(column, index)))
+        if (!preserveScroll) return () => { };
+        var manual = !preserveWidths ? null : grid.Columns.Select((column, index) => (column, key: ColumnKey(column, index)))
             .Where(pair => widths.TryGetValue(pair.column, out var state) && pair.column.Width.IsAbsolute && Math.Abs(pair.column.Width.Value - state.Value) > 1)
             .ToDictionary(pair => pair.key, pair => pair.column.Width.Value);
         var viewer = FindScrollViewer(grid);
@@ -22,8 +21,9 @@ internal static class TableColumnSizing
         var vertical = viewer?.VerticalOffset ?? 0;
         return () =>
         {
-            for (var index = 0; index < grid.Columns.Count; index++)
-                if (manual.TryGetValue(ColumnKey(grid.Columns[index], index), out var width)) grid.Columns[index].Width = width;
+            if (manual != null)
+                for (var index = 0; index < grid.Columns.Count; index++)
+                    if (manual.TryGetValue(ColumnKey(grid.Columns[index], index), out var width)) grid.Columns[index].Width = width;
             grid.UpdateLayout();
             viewer?.ScrollToHorizontalOffset(horizontal);
             viewer?.ScrollToVerticalOffset(vertical);
@@ -52,6 +52,9 @@ internal static class TableColumnSizing
         var typeface = new Typeface(grid.FontFamily, grid.FontStyle, grid.FontWeight, grid.FontStretch);
         var emphasized = new Typeface(grid.FontFamily, grid.FontStyle, FontWeights.SemiBold, grid.FontStretch);
         var dpi = VisualTreeHelper.GetDpi(grid).PixelsPerDip;
+        double TextWidth(string text, Typeface font) => text.Length == 0 ? 0 :
+            new FormattedText(text, CultureInfo.CurrentCulture, grid.FlowDirection, font, grid.FontSize, Brushes.Black, dpi)
+                .WidthIncludingTrailingWhitespace;
         for (var index = 0; index < grid.Columns.Count; index++)
         {
             var column = grid.Columns[index];
@@ -61,14 +64,14 @@ internal static class TableColumnSizing
             {
                 var value = cell(row, index);
                 if (!measured.Add(value)) continue;
-                var textWidth = value.Text.Length == 0 ? 0 : new FormattedText(value.Text, CultureInfo.CurrentCulture,
-                    grid.FlowDirection, value.Emphasized ? emphasized : typeface, grid.FontSize, Brushes.Black, dpi).WidthIncludingTrailingWhitespace;
+                var textWidth = TextWidth(value.Text, value.Emphasized ? emphasized : typeface);
                 width = Math.Max(width, Math.Ceiling(textWidth + value.IconWidth) + 22);
             }
-            if (column.Header is FrameworkElement header)
+            // 虚拟化会让部分表头尚未进入可视树，直接按最终使用的字体测量标题。
+            if (column.Header is Button header)
             {
-                header.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
-                width = Math.Max(width, Math.Ceiling(header.DesiredSize.Width) + 22);
+                var text = header.Content is TextBlock block ? block.Text : header.Content as string ?? "";
+                width = Math.Max(width, Math.Ceiling(TextWidth(text, emphasized) + header.Padding.Left + header.Padding.Right) + 26);
             }
             column.MinWidth = grid.MinColumnWidth;
             column.Width = width;

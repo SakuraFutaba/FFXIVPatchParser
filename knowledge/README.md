@@ -2,6 +2,8 @@
 
 从国服 V3 补丁清单追到 SqPack 资源，再读出 Excel、图片、模型、动作和音频。这里记录格式、文件之间的关系，以及用真实客户端复现过的现象。安装和使用说明见[项目 README](../README.md)。
 
+全资源目录、专用预览和补丁 Diff 的开发计划见[路线图](../TODO.md)。
+
 ```mermaid
 flowchart LR
     Patch["国服 V3 ZIP"] --> Delta["差分清单与写入区间"]
@@ -16,11 +18,15 @@ flowchart LR
 | 想查的问题 | 主题 |
 | --- | --- |
 | 国服补丁怎么下载，ZIP 里哪些文件对应游戏里的哪些路径？ | [国服 V3 补丁](cn-patches.md) |
+| 整个 SqPack 文件树怎样从索引建立，未知文件名怎样打开？ | [文件系统索引与预览](sqpack-filesystem.md) |
 | SqPack 索引怎样定位文件，图片和音频 Diff 的候选怎样筛出来？ | [SqPack 与媒体](sqpack-media.md) |
+| `Channeling.File` 怎样定位游戏里的连线特效？ | [Channeling 表与连线特效](sqpack-media.md#channeling-表与连线特效) |
 | EXL、EXH、EXD 各保存什么，Raw 快照怎样保留字段和子行？ | [Excel 表格与 Raw 快照](excel.md) |
 | 新旧表的数据来自哪里，字段关联和行列差异怎样比较？ | [表格 Diff 与关联](table-diff.md) |
 | 如何用中文名字找宠物、坐骑、配饰或 NPC 的模型？ | [模型目录与 NPC 名称](model-catalog.md) |
 | MDL 的外观由哪些文件决定，怪物的 Idle 藏在哪里？ | [模型、材质与动作](models-animation.md) |
+| 地图名称、区域 ID、3D 布局和二维贴图怎样对应？ | [地图目录与场景](territories.md) |
+| 模型怎样选择着色器，树叶和贴花的透明信息存在哪里？ | [Shader 资源、模型材质与预览](shaders.md) |
 | 怎样重做一次验证，判断读到了正确的构建、行或资源？ | [复现实验与验证](verification.md) |
 
 ## 几个可直接用上的发现

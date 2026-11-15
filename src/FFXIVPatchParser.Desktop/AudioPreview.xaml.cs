@@ -64,7 +64,7 @@ public partial class AudioPreview : UserControl
         catalogFilter?.Cancel();
         catalogPaths = null;
         AudioSearch.Text = "";
-        AudioTree.ItemsSource = null;
+        PathTreeView.Reset(AudioTree);
         CatalogStatus.Text = "";
         catalogScanned = false;
         AudioPath.Text = "";
@@ -72,7 +72,14 @@ public partial class AudioPreview : UserControl
         if (IsVisible && ShowBrowser) _ = LoadNamedPathsAsync();
     }
 
-    public Task OpenAsync(string path) => LoadAudioAsync(path);
+    public Task OpenAsync(string path)
+    {
+        AudioPath.Text = path;
+        return LoadAudioAsync(path);
+    }
+
+    internal void CancelFileOpen() => request?.Cancel();
+    internal bool IsPreviewingPath(string path) => audio != null && selectedPath == path;
 
     private async Task LoadAudioAsync(string path, int? trackIndex = null)
     {
@@ -186,7 +193,7 @@ public partial class AudioPreview : UserControl
         {
             var tree = await Task.Run(() => PathTree.Build(paths, path => path, search, token: current.Token), current.Token);
             if (current.IsCancellationRequested) return;
-            AudioTree.ItemsSource = tree;
+            PathTreeView.SetItems(AudioTree, tree, search, path => path == "music");
             CatalogStatus.Text = $"{tree.Sum(node => node.LeafCount):N0} / {paths.Count:N0} 个音频" +
                 (catalogScanned ? "（含未识别路径）" : "（已知路径）");
         }
@@ -204,7 +211,8 @@ public partial class AudioPreview : UserControl
 
     private async void SelectAudio(object sender, RoutedPropertyChangedEventArgs<object> e)
     {
-        if (e.NewValue is not PathTreeNode { IsDirectory: false } node) return;
+        if (PathTreeView.IsRestoringSelection(AudioTree) ||
+            e.NewValue is not PathTreeNode { IsDirectory: false } node) return;
         AudioPath.Text = node.FullPath;
         await OpenAsync(node.FullPath);
     }

@@ -60,6 +60,8 @@ flowchart LR
 
 项目使用固定版本的 Anamnesis 名称映射，并验证 Git blob 哈希。`B:0000005` 这样的键标识战斗 NPC 基础行。右侧值决定去哪里读取名称。Anamnesis 的贡献指南介绍了在游戏中选中 NPC、用工具查找名称行号，再提交到 `NpcNames.json` 的流程。 [Anamnesis 贡献指南](https://github.com/imchillin/Anamnesis/wiki/Notes-for-Community-Developers#finding-npc-names-from-their-appearances) · [NpcNames.json](https://github.com/imchillin/Anamnesis/blob/e180a0f124cb45db5bf56b283b41b8920a7e4c2e/Anamnesis/Data/NpcNames.json)
 
+「补充 NPC 名称」优先读取本地缓存的固定版本 `NpcNames.json`。缓存缺失或无效时才重新下载。能取得 `BNpcName` 行号时，用当前游戏的简中名称。只有英文名时，尝试从 FFCafé 更新中文对照，失败后复用已有对照或读取 InfSein 的英中历史 CSV，最后重建模型目录。 [名称读取和回退](../src/FFXIVPatchParser/NpcNameHints.cs) · [重建目录入口](../src/FFXIVPatchParser.Desktop/ModelPreview.Catalog.cs)
+
 | 值的形式 | 处理方式 | 能保留的证据 |
 | --- | --- | --- |
 | `N:0000408` | 读取本地 `BNpcName #408` | 名称行号与本地简中原文 |

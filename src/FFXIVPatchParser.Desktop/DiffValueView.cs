@@ -30,27 +30,20 @@ public sealed class DiffValueView : RichTextBox
         SetParagraph(paragraph);
     }
 
-    internal void ShowTargetIcon(BitmapSource bitmap, string path, RoutedEventHandler open)
+    internal double ShowTargetIcon(BitmapSource bitmap, string path, RoutedEventHandler open)
     {
-        if (Document.Blocks.LastBlock is not Paragraph paragraph) return;
+        if (Document.Blocks.LastBlock is not Paragraph paragraph) return 0;
         var button = new Button
         {
-            Content = new NativePixelImage { Source = bitmap },
+            Content = new NativePixelImage { Source = bitmap, MaxWidth = 250, MaxHeight = 224 },
             Style = (Style)FindResource("CellIconLink"),
-            ToolTip = $"在本地图片中打开 {path}"
-        };
-        button.Click += open;
-        var viewport = new ScrollViewer
-        {
-            Content = button,
-            HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-            MaxHeight = 150,
+            ToolTip = $"打开本地图片 · {bitmap.PixelWidth} × {bitmap.PixelHeight}\n{path}",
             Margin = new Thickness(0, 4, 0, 0)
         };
-        if (ActualWidth > 0)
-            viewport.MaxWidth = Math.Max(1, ActualWidth - Padding.Left - Padding.Right - SystemParameters.VerticalScrollBarWidth - 4);
+        button.Click += open;
         paragraph.Inlines.Add(new LineBreak());
-        paragraph.Inlines.Add(new InlineUIContainer(viewport));
+        paragraph.Inlines.Add(new InlineUIContainer(button));
+        button.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+        return button.DesiredSize.Height;
     }
 }

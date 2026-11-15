@@ -6,4 +6,7 @@
     <AssemblyName>FFXIVPatchParser.Desktop</AssemblyName>
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="../FFXIVPatchParser/FFXIVPatchParser.csproj" /></ItemGroup>
+  <ItemGroup>
+    <None Update="THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest"/>
+  </ItemGroup>
 </Project>

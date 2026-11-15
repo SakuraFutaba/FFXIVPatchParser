@@ -11,7 +11,7 @@
   <Grid>
     <Grid.ColumnDefinitions><ColumnDefinition x:Name="BrowserColumn" Width="318"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
     <DockPanel x:Name="Browser" Margin="0,0,8,0">
-      <TextBox x:Name="AudioSearch" DockPanel.Dock="Top" Tag="筛选音频路径…" Margin="0,0,0,6" TextChanged="FilterAudio"
+      <TextBox x:Name="AudioSearch" Style="{StaticResource SearchTextBox}" DockPanel.Dock="Top" Tag="筛选音频路径…" Margin="0,0,0,6" TextChanged="FilterAudio"
                AutomationProperties.Name="筛选音频路径" ToolTip="筛选目录和文件名"/>
       <TextBlock x:Name="CatalogStatus" DockPanel.Dock="Bottom" TextWrapping="Wrap" Foreground="{StaticResource Muted}" Margin="0,6,0,0"/>
       <TreeView x:Name="AudioTree" Style="{StaticResource CompactPathTree}" SelectedItemChanged="SelectAudio" ItemTemplate="{StaticResource AudioTreeLabel}"/>

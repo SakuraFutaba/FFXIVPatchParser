@@ -37,9 +37,10 @@ public partial class SqPackBrowser
     {
         CellTargetIcon.Source = bitmap;
         CellTargetIconButton.Tag = path;
-        CellTargetIconButton.ToolTip = bitmap == null ? null : $"在本地图片中打开 {path}";
-        CellTargetIconViewport.ScrollToHome();
-        CellTargetIconViewport.Visibility = bitmap == null ? Visibility.Collapsed : Visibility.Visible;
+        CellTargetIconButton.ToolTip = bitmap == null ? null : $"打开本地图片 · {bitmap.PixelWidth} × {bitmap.PixelHeight}\n{path}";
+        TableCellContent.Width = bitmap == null ? 500 : 400;
+        CellText.MaxHeight = bitmap == null ? 300 : 92;
+        CellTargetIconButton.Visibility = bitmap == null ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private static TableRow[] BuildTableRows(RelatedSheetPage page)

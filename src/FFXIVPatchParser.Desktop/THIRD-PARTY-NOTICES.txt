@@ -1,0 +1,6 @@
+VS Code Codicons — close 图标
+版权归 Microsoft 及项目贡献者所有。
+原始文件：https://github.com/microsoft/vscode-codicons/blob/main/src/icons/close.svg
+许可证：Creative Commons Attribution 4.0 International
+https://creativecommons.org/licenses/by/4.0/
+此处将 SVG 路径移植到 WPF XAML，用于搜索框的清除按钮。

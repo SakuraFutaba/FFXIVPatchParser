@@ -14,14 +14,17 @@ public sealed class NativePixelImage : Image
         VerticalAlignment = VerticalAlignment.Top;
         UseLayoutRounding = true;
         SnapsToDevicePixels = true;
-        RenderOptions.SetBitmapScalingMode(this, BitmapScalingMode.NearestNeighbor);
+        RenderOptions.SetBitmapScalingMode(this, BitmapScalingMode.HighQuality);
     }
 
     protected override Size MeasureOverride(Size availableSize)
     {
         if (Source is not BitmapSource bitmap) return base.MeasureOverride(availableSize);
         var dpi = VisualTreeHelper.GetDpi(this);
-        return new Size(bitmap.PixelWidth / dpi.DpiScaleX, bitmap.PixelHeight / dpi.DpiScaleY);
+        var width = bitmap.PixelWidth / dpi.DpiScaleX;
+        var height = bitmap.PixelHeight / dpi.DpiScaleY;
+        var scale = Math.Min(1, Math.Min(availableSize.Width / width, availableSize.Height / height));
+        return new Size(width * scale, height * scale);
     }
 
     protected override void OnDpiChanged(DpiScale oldDpi, DpiScale newDpi)

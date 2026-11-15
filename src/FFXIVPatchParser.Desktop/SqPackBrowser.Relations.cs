@@ -1,6 +1,5 @@
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Media;
 using System.Windows.Threading;
 using Microsoft.Win32;
 
@@ -96,7 +95,6 @@ public partial class SqPackBrowser
             if (!view.Data.Columns.SequenceEqual(raw.Columns)) tableColumns[sheet] = view.Data.Columns;
             else if (tableColumns.TryGetValue(sheet, out var names)) view = view with { Data = view.Data with { Columns = names } };
             if (status != null && operation == null && TablesPanel.IsVisible) SetStatus(status);
-            if (view.Cells.Count == 0 && view.Data.Columns.SequenceEqual(tablePage.Columns)) return;
             pendingTableView = (raw, view);
             ApplyTablePresentation();
         }
@@ -130,9 +128,11 @@ public partial class SqPackBrowser
         var related = !showRelations;
         if (related)
         {
+            var retryDefinitions = definitionDownloads.Values.Any(error => error != null);
             foreach (var sheetWithError in definitionDownloads.Where(pair => pair.Value != null).Select(pair => pair.Key).ToArray())
                 definitionDownloads.Remove(sheetWithError);
-            tableRelations = game is { } source ? new RelationResolver(Definitions, source.AsTableSource()) : null;
+            if (tableRelations == null || tableRelations.LastWarning != null || retryDefinitions)
+                tableRelations = game is { } source ? new RelationResolver(Definitions, source.AsTableSource()) : null;
         }
         SetTableMode(related);
         if (tablePage is not { } page || selectedTable is not { } sheet) return;
@@ -179,7 +179,7 @@ public partial class SqPackBrowser
             Columns = view.Data.Columns,
             Rows = BuildTableRows(view)
         };
-        RenderTable(scrollToFirst: false);
+        RenderTable(scrollToFirst: false, resetWidths: true);
         if (current.Item is TableRow previous && index >= 0 && index < TableGrid.Columns.Count &&
             tablePage.Rows.FirstOrDefault(row => row.Id == previous.Id) is { } row)
             SelectTableCell(row, index, focusGrid);
@@ -273,7 +273,7 @@ public partial class SqPackBrowser
         }
         if (result.IconPath is { Length: > 0 })
         {
-            CellRelationButton.Content = "打开本地图标";
+            CellRelationButton.Content = "打开本地图片";
             CellRelationButton.Visibility = Visibility.Visible;
         }
         else if (result.Reference is { } reference)
@@ -304,6 +304,7 @@ public partial class SqPackBrowser
 
     public async Task JumpToCellAsync(string sheet, RowKey key, int columnPosition)
     {
+        NavigationStarting?.Invoke();
         PageRequested?.Invoke(SqPackPage.Tables);
         if (!await EnsureGameForNavigation() || game is not { } source) return;
         var name = source.SheetNames.FirstOrDefault(name => name.Equals(sheet, StringComparison.OrdinalIgnoreCase));
@@ -328,11 +329,14 @@ public partial class SqPackBrowser
             targetRow = page.Rows.FirstOrDefault(row => row.Id == key)
                 ?? throw new KeyNotFoundException($"本地 {name} 中找不到行 {key}。");
 
+            SaveLocalTableTab();
+            localTableTabs.Open(name);
             selectedTable = name;
             columnFilters.Clear();
             firstTableOffset = pageIndex * RowsPerPage;
             tablePage = page;
             RenderTable();
+            RenderLocalTableTabs();
             return $"已定位 {name} · Row {key}";
         });
         if (targetRow == null) return;
@@ -370,25 +374,7 @@ public partial class SqPackBrowser
             if (TablesList.ItemsSource is not IReadOnlyList<PathTreeNode> allNodes || !FindTablePath(allNodes)) return;
         }
 
-        ItemsControl parent = TablesList;
-        for (var level = 0; level < path.Count; level++)
-        {
-            var index = path[level];
-            parent.UpdateLayout();
-            if (parent.ItemContainerGenerator.ContainerFromIndex(index) == null)
-                FindVirtualizingItemsHost(parent)?.BringIndexIntoViewPublic(index);
-            if (parent.ItemContainerGenerator.ContainerFromIndex(index) is not TreeViewItem item) return;
-            if (level == path.Count - 1)
-            {
-                item.IsSelected = true;
-                item.BringIntoView();
-            }
-            else
-            {
-                item.SetCurrentValue(TreeViewItem.IsExpandedProperty, true);
-                parent = item;
-            }
-        }
+        PathTreeView.SelectItem(TablesList, path);
 
         bool FindTablePath(IReadOnlyList<PathTreeNode> candidates)
         {
@@ -401,13 +387,5 @@ public partial class SqPackBrowser
             }
             return false;
         }
-    }
-
-    private static VirtualizingPanel? FindVirtualizingItemsHost(DependencyObject root)
-    {
-        if (root is VirtualizingPanel { IsItemsHost: true } panel) return panel;
-        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
-            if (FindVirtualizingItemsHost(VisualTreeHelper.GetChild(root, i)) is { } found) return found;
-        return null;
     }
 }

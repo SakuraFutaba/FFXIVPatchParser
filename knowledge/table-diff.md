@@ -74,3 +74,16 @@ CHS 7.58 的本地抽查验证了 `Action` 对 `ActionCategory` 的行号引用�
 | 关联读取超时 | 看状态栏区分版本语义元数据、关联目标读取和定义读取。CSV 下载可在界面等待结束后继续，缓存就绪后重新打开该表或单元格。 |
 
 具体复现步骤见 [验证与复现](verification.md)。 [数据源校验](../src/FFXIVPatchParser/TableSources.cs) · [版本匹配与下载](../src/FFXIVPatchParser/DataminingSource.cs) · [关联状态](../src/FFXIVPatchParser/RelationResolver.cs)
+
+## 关联缓存与复测
+
+2026-11-14 在国服构建 `2026.11.03.0000.0000`、简体中文上，用本地 `CharaCardDesignPreset` 的全部 161 行、10 列调用 `EnrichWithDetailsAsync`，连续解析三次。定义及版本语义缓存已在磁盘，不包含界面绘制、图标解码或首次下载耗时。
+
+| 实现 | 第一次 | 第二次 | 第三次 | 解析出的关联 |
+| --- | ---: | ---: | ---: | ---: |
+| 原缓存 | 263.7 ms | 107.4 ms | 111.5 ms | 681 |
+| 分开缓存目标行与整表 | 266.4 ms | 15.4 ms | 8.9 ms | 681 |
+
+本项目实测：优化前后 681 个关联结果的完整字段一致，预先取消的请求仍抛出取消异常。首轮耗时基本不变，收益集中在重复读取。复现时先读取本地页，再在同一解析器上连续解析三次；对比 `RelatedCell` 的引用、名称、图标路径与状态，而不只比较数量。此处为单次进程样本，不能推算其他表或网络冷缓存的耗时。
+
+目标行与整表现在分别最多缓存 1024 项和 32 项；同一操作内复用列结构兼容性检查，结束后清空检查缓存。成功解析后的 Raw/关联切换复用解析器，读取或定义下载失败时重新创建，以保留再次切换立即重试的能力。本地和 Diff 每次切换、关联结果应用时，按当前显示内容重算列宽。 [关联解析器](../src/FFXIVPatchParser/RelationResolver.cs) · [列宽计算](../src/FFXIVPatchParser.Desktop/TableColumnSizing.cs) · [本地关联](../src/FFXIVPatchParser.Desktop/SqPackBrowser.Relations.cs) · [Diff 关联](../src/FFXIVPatchParser.Desktop/MainWindow.Relations.cs)

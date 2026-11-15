@@ -2,6 +2,8 @@
 
 FF14 国服 V3 补丁检查、Raw Excel 快照与表格 Diff 桌面工具。
 
+项目目标是浏览 SqPack 的全部资源，并在更新后快速定位关注的资源和对象发生了哪些变化。 [开发路线图](TODO.md)
+
 [FF14 解包知识库](knowledge/README.md)记录补丁、SqPack、表格、模型、动作和音频的格式与复现实验。
 
 目前支持：
@@ -10,10 +12,10 @@ FF14 国服 V3 补丁检查、Raw Excel 快照与表格 Diff 桌面工具。
 - 按 EXH 保留列类型、偏移和原始值；SeString 保存可读文本与原始字节。
 - 查询官方补丁目录，探测包文件可访问性，下载并校验最新 ZIP。
 - 检查补丁路径映射、Excel 差分校验值及 SqPack 资源分类。
-- WPF 桌面界面包含补丁工作区、红绿表格 Diff 和图片 Diff。补丁工作区集成官方目录、下载和变化资源。
-- 直接浏览本地 SqPack 的 Excel 表格、图片、模型和音频。表格可切换 Raw 和关联视图，无需先导出快照。
+- WPF 桌面界面的侧栏在 Patch 分组上方提供一级入口「补丁目录」。Patch 分组包含文件树，以及表格、图片、模型和音频 Diff。
+- SqPack 文件系统按目录浏览本地索引。可读资源按类型在同页预览，也可打开专用页面。未知文件名显示哈希，其他格式可查看 Hex。
 
-「容器级清单」按文件展示补丁差分。当前版本支持查看 VCDIFF 写入区间和校验本地文件，完整还原历史容器仍需另行应用差分。
+Patch 的「文件系统」按补丁清单中的容器和文件路径展示差分，支持 VCDIFF 写入区间和本地文件校验。完整还原历史容器仍需另行应用差分。
 
 ## 环境
 
@@ -47,13 +49,16 @@ FF14 国服 V3 补丁检查、Raw Excel 快照与表格 Diff 桌面工具。
 ./scripts/Invoke-Dotnet.ps1 run --project src/FFXIVPatchParser.Desktop
 ```
 
-- **补丁工作区 → 容器级清单**左侧按路径列出文件，悬停可看 ZIP 条目和校验值。右侧显示 VCDIFF 原始字节和目标写入区间，选中文件后自动校验本地目标文件。校验通过后可切换到目标字节，提供匹配的旧版目录后可按文件偏移逐字节对照。
-- **补丁工作区 → 补丁目录**列出官方更新、分卷数、大小和可访问性，可下载所选更新或打开本地 ZIP。同一更新的多个分卷可以一起打开。程序校验下载文件的大小和 MD5，通过校验的分卷会复用。
+- **Patch → 文件系统**左侧可按路径或类别筛选补丁清单，悬停可看 ZIP 条目和校验值。右侧显示 VCDIFF 原始字节和目标写入区间，选中文件后自动校验本地目标文件。校验通过后可切换到目标字节，提供匹配的旧版目录后可按偏移逐字节对照。
+- 侧栏一级入口 **补丁目录**位于 **Patch** 分组上方，列出官方更新、分卷数、大小和可访问性，可下载所选更新或打开本地 ZIP。同一更新的多个分卷可以一起打开。程序校验下载文件的大小和 MD5，通过校验的分卷会复用。
 - **表格 Diff** 在加载补丁后自动匹配 CHS 历史构建。左侧列出有变化的表，选择一张表后按 RowId、SubrowId 和列编号比较。侧栏底部显示当前 SqPack 游戏版本和补丁版本。
+- **SqPack → 文件系统**按原路径或哈希展开本地索引，可搜索虚拟路径、索引哈希和数据分片名。选中文件后，右侧显示大小、容器和偏移，同时使用现有表格、图片、模型、地图或音频预览。可用「查看 Hex」切换到所选文件的解包字节，用「打开…页」进入对应预览页。 [文件系统索引与预览](knowledge/sqpack-filesystem.md)
 - **SqPack** 和 **Diff** 都可折叠，各有表格、图片、模型和音频入口。本地表格直接读取 CHS 或无语言数据，支持按列筛选。表格滚动时按需加载更多行，向右滚动可查看所有列。
 - **设置**管理游戏目录及已有补丁所在的目录。支持游戏根目录、`game` 或 `sqpack`。设置存放在被忽略的 `tmp/ui/` 中，也可通过 `FFXIV_GAME_PATH` 指定游戏目录。自定义补丁目录供程序查找和打开已有 ZIP，新下载仍保存到 `tmp/patches/`。
 
 表格 Diff、本地 SqPack 和图片 Diff 的表名与路径使用靠左、缩进紧凑的目录树。搜索保留匹配项的父目录，点击叶子时按完整路径读取。可拖动表格 Diff 中间的分隔条调整目录宽度。
+
+本地表格和表格 Diff 各自支持多个标签页。单击目录中的表会复用预览标签，双击表名或预览标签可将其固定。再次打开已固定的表时会切到原标签。右键目录中的表可复制完整表名。顶部箭头或 Alt+←／Alt+→ 可在页面、表格位置和本地图片之间后退、前进。
 
 ### 图片、模型与音频
 
@@ -73,6 +78,14 @@ FF14 国服 V3 补丁检查、Raw Excel 快照与表格 Diff 桌面工具。
 
 「SqPack → 音频」默认列出已知 BGM 路径，也可输入游戏内 `.scd` 路径直接打开。按需扫描后可试听只知道容器、偏移和哈希的音频。可切换音轨、播放、暂停、定位和导出。Windows 解码失败时，程序可使用 PATH 中已有的 FFmpeg 转换为 PCM，回退试听最长五分钟。导出保留完整音轨。
 
+「SqPack → 地图」可按中文地名、区域用途、ID 或场景路径查找区域。右侧显示区域、地域、关联副本或任务、场景和地图纹理路径，可跳到原始表记录。3D 场景先显示带贴图的地形，再分批加载建筑和道具。选择「游戏地图」可查看客户端的二维地图纹理。 [地图资源与验证记录](knowledge/territories.md)
+
+地图预览按材质参数处理树叶、草丛和贴花的透明边缘。模型预览还能从已验证的角色着色器和法线采样器读取发片遮罩。动作默认按 120 fps 采样，实际姿势提交频率随模型和系统变化。拖动或点击进度条可跳到任意时刻，保留当前播放或暂停状态。模型预览选中单个材质后，可展开「着色器包」查看 SHPK 路径、程序数量、材质键和采样器。 [着色器与 Alpha Clip](knowledge/shaders.md)
+
+地图和模型预览共用镜头操作。点击视口后，W/S 沿镜头朝向前进和后退，A/D 和方向键原地转向。按住鼠标左键或右键时，A/D 改为横移，左右键同按会前进。左键拖动绕当前中心旋转，右键拖动原地转向，中键拖动同时平移镜头和旋转中心。滚轮平滑推近或拉远镜头。
+
+按住 Shift 或 Ctrl 会将移动速度和滚轮幅度分别调为十倍或十分之一。空格和 Q 沿世界竖直方向升降。地图的「地图总览」恢复默认取景，「距离 20」将镜头放在当前旋转中心外 20 个世界单位，并对准中心。切换到游戏地图再返回 3D 场景时会保留镜头位置、朝向和旋转中心。「取当前视角」会捕获这三项，点击「保存起点」后可在以后打开该区域时恢复。自定义起点优先，清除后恢复唯一出生圈附近的视角或自动取景。起点保存在 `tmp/ui/map-start-positions.json`。
+
 「模型 Diff」和「音频 Diff」也使用 VCDIFF 写入区间筛选候选，支持按路径或容器搜索结果。容器重排可能产生额外候选，删除项和旧版本内容需要旧版数据。
 
 ### 表格比较与关联
@@ -87,7 +100,7 @@ SqPack 的 EXH 记录列的顺序、原始类型和字节偏移，EXD 保存行�
 
 本地表的常规引用按行号从 SqPack 读取，关联名称所需的版本化 CSV 只解析表头。CSV 首次按需下载，完整文件经校验后可从 `tmp/ui/datamining/` 复用，定义缓存位于 `tmp/definitions/saintcoinach/`。等待读取超时的单元格先显示原值，后台下载完成后可重新读取。状态栏会标明失败的表和读取环节，区分本地数据读取、历史数据下载及字段定义。
 
-在 Diff 的绿色新侧右键，可按表名、RowId、SubrowId 和列定位本地 SqPack 单元格。选择“打开关联记录 / Icon 图片”可跳到本地引用行或预览本地图标，需先连接游戏目录或已有保存的目录。
+在 Diff 的绿色新侧右键，可按表名、RowId、SubrowId 和列定位本地 SqPack 单元格。选择“打开关联记录 / 本地图片”可跳到本地引用行或预览本地图片，需先连接游戏目录或沿用已保存的目录。
 
 历史对比的行和单元格值来自两个构建的完整 CHS 表格 CSV。程序用官方构建号精确匹配提交，通过两个完整 CHS Git tree 找到变化表，按需下载 CSV 并校验 Git blob 哈希。所选 ZIP 提供版本标识，表格还原尚未实现。无法准确匹配构建时，界面会显示原因。CSV 无法保留 Raw 快照中的全部 SeString 原始信息。可用下文的命令另行导出本地 Raw 快照。
 
@@ -135,11 +148,16 @@ python ./scripts/Verify-Snapshot.py tmp/snapshots/current --output tmp/validatio
 
 ## 参考资料
 
+- 全资源浏览、索引哈希和预览调度。 [Alpha 文件系统](https://github.com/NotNite/Alpha#features) · [FFXIV Explorer fork](https://github.com/goaaats/ffxiv-explorer-fork) · [XivAlexander 索引结构](https://github.com/Soreepeong/XivAlexander/blob/main/XivAlexanderCommon/Sqex/Sqpack.h)
+- 旧版服务端区域、NPC、事件和 EXD 结构。 [Sapphire](https://github.com/SapphireServer/Sapphire) · [ExdData](https://github.com/SapphireServer/Sapphire/blob/master/src/common/Exd/ExdData.h)
+- 材质、着色器包和法线遮罩。 [Penumbra.GameData](https://github.com/Ottermandias/Penumbra.GameData) · [Penumbra 材质导出](https://github.com/xivdev/Penumbra/blob/testing/Penumbra/Import/Models/Export/MaterialExporter.cs) · [Meddle](https://github.com/PassiveModding/Meddle)
 - 国服 V3 补丁元数据、下载及安装流程。 [Dalamud 国服分支](https://github.com/Dalamud-DailyRoutines/Dalamud) · [DailyRoutines 本地化](https://github.com/Dalamud-DailyRoutines/DailyRoutines.Localizations) · [XIVLauncher CN 实现](https://github.com/AtmoOmen/FFXIVQuickLauncher/tree/65972f758b47615f321d4f3da509e3ade3b14489) · [官方版本目录](https://v3launcher.jijiagames.com/v3launcher/build/ver2data/100001900/8847/-1/ver2.dat)
 - SqPack、EXH、EXD 和纹理读取。 [Lumina 7.7.2](https://www.nuget.org/packages/Lumina/7.7.2) · [Lumina 源码](https://github.com/NotAdam/Lumina) · [XIV Dev SqPack Wiki](https://xiv.dev/data-files/sqpack) · [SaintCoinach 原始列](https://github.com/xivapi/SaintCoinach/blob/master/SaintCoinach/Ex/Column.cs) · [关系列](https://github.com/xivapi/SaintCoinach/blob/master/SaintCoinach/Ex/Relational/RelationalColumn.cs) · [Definitions](https://github.com/xivapi/SaintCoinach/tree/master/SaintCoinach/Definitions)
 - Excel 浏览、字段定义和图片预览交互。 [Alpha ExcelService](https://github.com/NotNite/Alpha/blob/d09167974abe2e5c1274cff8f022ca4037c8f59d/Alpha/Services/Excel/ExcelService.cs) · [EXDSchema](https://github.com/xivdev/EXDSchema) · [HaselDebug Excel](https://github.com/Haselnussbomber/HaselDebug/tree/main/HaselDebug/Tabs/Excel) · [TexTools UI](https://github.com/TexTools/FFXIV_TexTools_UI)
 - 模型材质、骨骼和动作文件。 [TexTools Framework](https://github.com/TexTools/xivModdingFramework) · [Godbert](https://github.com/xivapi/SaintCoinach/tree/master/Godbert)
 - 模型目录和名称映射。 [TexTools 模型缓存](https://github.com/TexTools/xivModdingFramework/blob/master/xivModdingFramework/Cache/XivCache.cs) · [TexTools 同伴模型](https://github.com/TexTools/xivModdingFramework/blob/master/xivModdingFramework/Items/Categories/Companions.cs) · [Godbert 怪物视图](https://github.com/xivapi/SaintCoinach/blob/master/Godbert/ViewModels/MonstersViewModel.cs) · [Anamnesis NPC 名称](https://github.com/imchillin/Anamnesis/blob/e180a0f124cb45db5bf56b283b41b8920a7e4c2e/Anamnesis/Data/NpcNames.json) · [FFCafé 字符串数据库](https://strings-legacy.ffcafe.cn/)
-- SCD 音频提取与可选试听转换。 [Lumina ScdFile](https://github.com/NotAdam/Lumina/blob/8802d66a3cb3032be2fcf998bb10e864221bdb13/src/Lumina/Data/Files/ScdFile.cs) · [FFmpeg](https://ffmpeg.org/)
+- 区域目录、静态场景和地图纹理路径。 [Godbert Territories](https://github.com/xivapi/SaintCoinach/blob/master/Godbert/ViewModels/TerritoryViewModel.cs) · [Hyperborea](https://github.com/kawaii/Hyperborea) · [ECommons 区域选择器](https://github.com/NightmareXIV/ECommons/blob/e6be8f0fd7786a9e1781db2e71cb5b9146f04980/ECommons/ImGuiMethods/TerritorySelection/TerritorySelector.cs) · [SaintCoinach Map](https://github.com/xivapi/SaintCoinach/blob/master/SaintCoinach/Xiv/Map.cs)
+- SCD 音频、试听转换和曲目目录。 [Lumina ScdFile](https://github.com/NotAdam/Lumina/blob/8802d66a3cb3032be2fcf998bb10e864221bdb13/src/Lumina/Data/Files/ScdFile.cs) · [FFmpeg](https://ffmpeg.org/) · [OrchestrionPlugin](https://github.com/perchbirdd/OrchestrionPlugin/tree/main/Orchestrion/Data)
+- 搜索框清除图标。 [VS Code Codicons](https://github.com/microsoft/vscode-codicons/blob/main/src/icons/close.svg) · [许可证与署名](src/FFXIVPatchParser.Desktop/THIRD-PARTY-NOTICES.txt)
 - CHS 历史数据及导出链。 [InfSein/ffxiv-datamining-mixed](https://github.com/InfSein/ffxiv-datamining-mixed) · [InfSein/dumpcsv](https://github.com/InfSein/dumpcsv) · [thewakingsands/dumpcsv](https://github.com/thewakingsands/dumpcsv) · [xivapi/SaintCoinach](https://github.com/xivapi/SaintCoinach)
 - 二进制差分及桌面发布。 [RFC 3284 VCDIFF](https://www.rfc-editor.org/rfc/rfc3284) · [xdelta3](https://github.com/jmacd/xdelta) · [.NET 自包含发布](https://learn.microsoft.com/dotnet/core/deploying/)

@@ -16,9 +16,10 @@
           <ComboBoxItem Content="按模型编号"/>
           <ComboBoxItem Content="索引扫描结果"/>
         </ComboBox>
-        <TextBox x:Name="ModelSearch" Tag="名称、编号或路径…" AutomationProperties.Name="筛选模型"
+        <TextBox x:Name="ModelSearch" Style="{StaticResource SearchTextBox}" Tag="名称、编号或路径…" AutomationProperties.Name="筛选模型"
                  TextChanged="FilterModels" IsEnabled="False"/>
-        <Button x:Name="NpcNamesButton" Content="补充 NPC 名称" Click="DownloadNpcNames" Padding="6,3" Margin="0,6,0,0" HorizontalAlignment="Left"/>
+        <Button x:Name="NpcNamesButton" Content="补充 NPC 名称" Click="DownloadNpcNames" Padding="6,3" Margin="0,6,0,0"
+                HorizontalAlignment="Left" ToolTip="读取 Anamnesis 名称映射，尝试更新中文对照，再重建模型目录。"/>
         <Expander Header="扫描选项" Margin="0,6,0,0">
           <StackPanel>
             <CheckBox x:Name="ScanAllModels" Content="包含场景等模型（较慢）" Margin="0,6,0,0"
@@ -73,6 +74,10 @@
               <ComboBox x:Name="MaterialChoice" SelectionChanged="MaterialSelected" DisplayMemberPath="Label"
                         AutomationProperties.Name="材质筛选" Padding="5,3" HorizontalContentAlignment="Stretch"/>
               <TextBlock x:Name="MaterialDetails" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,6,0,0"/>
+              <Expander x:Name="ShaderInspector" Header="着色器包" Expanded="ShowMaterialShader" Visibility="Collapsed" Margin="0,6,0,0">
+                <TextBox x:Name="ShaderDetails" IsReadOnly="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                         MaxHeight="180" Margin="0,3,0,0" AutomationProperties.Name="着色器元数据"/>
+              </Expander>
               <ComboBox x:Name="TextureChoice" SelectionChanged="TextureSelected" DisplayMemberPath="Label"
                         AutomationProperties.Name="材质贴图" Padding="5,3" Margin="0,8,0,0" Visibility="Collapsed"/>
               <Image x:Name="TextureImage" Height="100" Stretch="Uniform" Visibility="Collapsed" Margin="0,6,0,0"/>
@@ -83,27 +88,38 @@
               <Expander x:Name="BoneList" Header="骨骼名称" Margin="0,6,0,0">
                 <TextBox x:Name="BoneNames" IsReadOnly="True" VerticalScrollBarVisibility="Auto" TextWrapping="Wrap" MaxHeight="150"/>
               </Expander>
-              <Expander x:Name="ActionList" Header="动作资源" Margin="0,8,0,0" Expanded="ActionListExpanded">
+              <Expander x:Name="ActionList" Header="动作资源" IsExpanded="True" Margin="0,8,0,0" Expanded="ActionListExpanded">
                 <StackPanel Margin="0,5,0,0">
-                  <TextBox x:Name="ActionFilter" Tag="筛选动作候选…" AutomationProperties.Name="筛选动作候选"
+                  <TextBox x:Name="ActionFilter" Style="{StaticResource SearchTextBox}" Tag="筛选动作候选…" AutomationProperties.Name="筛选动作候选"
                            IsEnabled="False" TextChanged="FilterActions" Padding="5,3" Margin="0,0,0,5"/>
-                  <ComboBox x:Name="ActionChoice" SelectionChanged="ActionSelected" ScrollViewer.CanContentScroll="True"
-                            VirtualizingPanel.VirtualizationMode="Recycling" AutomationProperties.Name="模型动作资源" IsEnabled="False" Padding="5,3">
-                    <ComboBox.ItemsPanel>
-                      <ItemsPanelTemplate><VirtualizingStackPanel/></ItemsPanelTemplate>
-                    </ComboBox.ItemsPanel>
-                    <ComboBox.ItemTemplate>
-                      <DataTemplate><TextBlock Text="{Binding Label}" ToolTip="{Binding Path}" TextTrimming="CharacterEllipsis"/></DataTemplate>
-                    </ComboBox.ItemTemplate>
-                  </ComboBox>
-                  <TextBlock x:Name="ActionDiscoveryStatus" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,5,0,0"/>
                   <DockPanel Margin="0,6,0,0">
                     <Button Content="读取" DockPanel.Dock="Right" Click="LoadAction" Padding="5,3" Margin="4,0,0,0"/>
                     <TextBox x:Name="ActionPath" Tag="输入 .pap 路径…" Padding="5,3" KeyDown="ActionPathKeyDown"
                              AutomationProperties.Name="动作资源路径"/>
                   </DockPanel>
                   <TextBlock x:Name="ActionMetadataStatus" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,5,0,0"/>
-                  <Grid x:Name="PlaybackSlotPicker" Visibility="Collapsed" Margin="0,5,0,0">
+                  <Grid Height="26">
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="Auto"/>
+                      <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="PreviousAction" Content="‹" Click="SelectPreviousAction" Width="25" Padding="0" Margin="0,0,4,0"
+                            IsEnabled="False" ToolTip="上一个动作文件" AutomationProperties.Name="上一个动作文件"/>
+                    <ComboBox x:Name="ActionChoice" Grid.Column="1" SelectionChanged="ActionSelected" ScrollViewer.CanContentScroll="True"
+                              VirtualizingPanel.VirtualizationMode="Recycling" AutomationProperties.Name="模型动作资源" IsEnabled="False" Padding="5,3">
+                      <ComboBox.ItemsPanel>
+                        <ItemsPanelTemplate><VirtualizingStackPanel/></ItemsPanelTemplate>
+                      </ComboBox.ItemsPanel>
+                      <ComboBox.ItemTemplate>
+                        <DataTemplate><TextBlock Text="{Binding Label}" ToolTip="{Binding Path}" TextTrimming="CharacterEllipsis"/></DataTemplate>
+                      </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <Button x:Name="NextAction" Grid.Column="2" Content="›" Click="SelectNextAction" Width="25" Padding="0" Margin="4,0,0,0"
+                            IsEnabled="False" ToolTip="下一个动作文件" AutomationProperties.Name="下一个动作文件"/>
+                  </Grid>
+
+                  <Grid x:Name="PlaybackSlotPicker" Height="26" Visibility="Collapsed" Margin="0,5,0,0">
                     <Grid.ColumnDefinitions>
                       <ColumnDefinition Width="Auto"/>
                       <ColumnDefinition Width="*"/>
@@ -111,30 +127,34 @@
                     </Grid.ColumnDefinitions>
                     <Button x:Name="PreviousPlaybackSlot" Content="‹" Click="SelectPreviousPlaybackSlot" Width="25" Padding="0" Margin="0,0,4,0"
                             ToolTip="上一个动作槽" AutomationProperties.Name="上一个动作槽"/>
-                    <ComboBox x:Name="PlaybackSlot" Grid.Column="1" SelectionChanged="PlaybackSlotChanged" AutomationProperties.Name="动作槽">
+                    <ComboBox x:Name="PlaybackSlot" Grid.Column="1" SelectionChanged="PlaybackSlotChanged" AutomationProperties.Name="动作槽"
+                              Padding="5,3">
                       <ComboBox.ItemTemplate><DataTemplate><TextBlock TextTrimming="CharacterEllipsis"><Run Text="{Binding Index, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding Name, Mode=OneWay}"/></TextBlock></DataTemplate></ComboBox.ItemTemplate>
                     </ComboBox>
                     <Button x:Name="NextPlaybackSlot" Grid.Column="2" Content="›" Click="SelectNextPlaybackSlot" Width="25" Padding="0" Margin="4,0,0,0"
                             ToolTip="下一个动作槽" AutomationProperties.Name="下一个动作槽"/>
                   </Grid>
+                  <TextBlock x:Name="ActionDiscoveryStatus" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,5,0,0"/>
                 </StackPanel>
               </Expander>
               <WrapPanel Margin="0,5,0,0">
                 <local:PlayPauseButton x:Name="PlaybackStart" Style="{StaticResource MediaPlaybackButton}" Click="PlayAnimation" IsEnabled="False"/>
                 <Button x:Name="PlaybackStop" Style="{StaticResource StopPlaybackButton}" Click="StopAnimation" IsEnabled="False"/>
               </WrapPanel>
+              <Slider x:Name="PlaybackPosition" Minimum="0" Maximum="1" IsEnabled="False"
+                      IsMoveToPointEnabled="True" ValueChanged="SeekAnimation" Margin="0,5,0,0"
+                      AutomationProperties.Name="动作播放进度"/>
+              <TextBlock x:Name="PlaybackPositionText" Text="0.00 / 0.00 秒" Foreground="{StaticResource Muted}"/>
               <TextBlock x:Name="PlaybackStatus" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,5,0,0"/>
             </StackPanel>
           </ScrollViewer>
         </Border>
         <Border x:Name="ModelSurface" Background="#202B3A" CornerRadius="6" ClipToBounds="True"
-                SizeChanged="ResizeViewport" MouseDown="StartDrag" MouseMove="DragModel" MouseUp="EndDrag"
-                LostMouseCapture="StopDrag" MouseWheel="ZoomWithWheel">
+                Focusable="True" AutomationProperties.Name="3D 模型视口">
           <Grid>
             <Viewport3D x:Name="ModelViewport" IsHitTestVisible="False" ClipToBounds="True">
               <Viewport3D.Camera>
-                <OrthographicCamera x:Name="ViewCamera" Position="0,0,4" LookDirection="0,0,-4" Width="3"
-                                    NearPlaneDistance="0.05" FarPlaneDistance="20"/>
+                <PerspectiveCamera x:Name="ViewCamera" UpDirection="0,1,0" FieldOfView="55"/>
               </Viewport3D.Camera>
               <ModelVisual3D>
                 <ModelVisual3D.Content>
@@ -150,7 +170,7 @@
             <TextBlock x:Name="EmptyViewport" Text="选择或输入模型路径" Foreground="#CFD8E5" Margin="12"
                        HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center"
                        IsHitTestVisible="False"/>
-            <TextBlock x:Name="CameraHelp" Text="左键旋转 · 中键或右键平移 · 滚轮缩放" Foreground="#CFD8E5"
+            <TextBlock x:Name="CameraHelp" Text="W/S 前后 · A/D 转向 · 鼠标键+A/D 横移 · 左右键同按前进&#10;Shift 加速 · Ctrl 减速 · 空格上升 · Q 下降" Foreground="#CFD8E5"
                        HorizontalAlignment="Left" VerticalAlignment="Bottom" Margin="10,0,10,8"
                        TextWrapping="Wrap" IsHitTestVisible="False" Visibility="Collapsed"/>
           </Grid>
