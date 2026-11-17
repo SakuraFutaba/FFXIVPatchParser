@@ -34,6 +34,19 @@ public sealed class SaintCoinachDefinitions
         try { var definition = Parse(File.ReadAllText(path)); return definition.Sheet == sheet ? definition : null; }
         catch (Exception ex) when (ex is JsonException or InvalidDataException or KeyNotFoundException or InvalidOperationException) { return null; }
     }
+
+    public SheetDefinition? GetVerifiedBuiltIn(string sheet, IReadOnlyList<SheetColumn> columns)
+    {
+        if (!useUpstream) return null;
+        using var stream = typeof(SaintCoinachDefinitions).Assembly.GetManifestResourceStream($"FFXIVPatchParser.Definitions.{sheet}.json");
+        if (stream is null) return null;
+        using var reader = new StreamReader(stream);
+        var json = reader.ReadToEnd();
+        using var doc = JsonDocument.Parse(json);
+        var signature = string.Join(";", columns.Select(c => FormattableString.Invariant($"{c.Id}:{c.Type}:{c.Offset}")));
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(signature)));
+        return doc.RootElement.GetProperty("schemaHash").GetString() == hash ? Parse(json) : null;
+    }
     private string? FindFile(string sheet)
     {
         var path = Path.Combine(DirectoryPath, sheet + ".json");

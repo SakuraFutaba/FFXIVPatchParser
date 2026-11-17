@@ -68,7 +68,11 @@ internal static class TableTabs
         var name = node.Payload switch { string text => text, SheetChange sheet => sheet.Name, _ => null };
         if (name == null) return;
         var menu = new ContextMenu { PlacementTarget = item };
-        var copy = new MenuItem { Header = "复制表名" };
+        var copy = new MenuItem
+        {
+            Header = "复制表名",
+            Icon = new ContentControl { Content = "复制", ContentTemplate = (DataTemplate)Application.Current.FindResource("CopyIcon"), Focusable = false }
+        };
         copy.Click += (_, _) =>
         {
             try { Clipboard.SetText(name); }

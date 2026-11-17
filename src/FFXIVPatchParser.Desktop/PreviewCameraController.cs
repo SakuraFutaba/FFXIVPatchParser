@@ -22,6 +22,7 @@ internal sealed class PreviewCameraController
     private Point? dragOrigin;
     private double yaw, pitch, navigationScale;
     private double? targetDistance;
+    private double zoomDistance;
     private bool leftHeld, rightHeld, middleHeld, cameraMoved;
     private bool renderingInput;
     private TimeSpan? lastInputFrame;
@@ -234,7 +235,8 @@ internal sealed class PreviewCameraController
 
     private void NudgeZoom(double notches)
     {
-        var distance = targetDistance ?? (cameraPosition - orbitCenter).Length;
+        if (!targetDistance.HasValue) zoomDistance = (cameraPosition - orbitCenter).Length;
+        var distance = targetDistance ?? zoomDistance;
         var minimum = Math.Clamp(navigationScale * 0.0002, 0.005, 0.25);
         var maximum = Math.Max(distance, Math.Max(100, navigationScale * 12));
         targetDistance = Math.Clamp(distance * Math.Exp(-0.12 * notches * SpeedMultiplier()), minimum, maximum);
@@ -245,9 +247,7 @@ internal sealed class PreviewCameraController
     private bool StepZoom(double deltaTime)
     {
         if (targetDistance is not { } target) return false;
-        var offset = cameraPosition - orbitCenter;
-        var distance = offset.Length;
-        var direction = distance > 0 ? offset / distance : -Facing;
+        var distance = zoomDistance;
         var next = target + (distance - target) * Math.Exp(-12 * deltaTime);
         if (Math.Abs(next - target) < Math.Max(0.00005, target * 0.0005))
         {
@@ -255,7 +255,9 @@ internal sealed class PreviewCameraController
             targetDistance = null;
             UpdateInputSubscription();
         }
-        cameraPosition = orbitCenter + direction * next;
+        // 原地转向后旋转中心可以偏离视轴；滚轮沿当前朝向推进，保留独立的环绕中心。
+        cameraPosition += Facing * (distance - next);
+        zoomDistance = next;
         return true;
     }
 

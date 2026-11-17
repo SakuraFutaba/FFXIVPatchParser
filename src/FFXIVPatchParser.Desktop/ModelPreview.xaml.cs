@@ -33,6 +33,7 @@ public partial class ModelPreview : UserControl
         get => Browser.Visibility == Visibility.Visible;
         set
         {
+            if (!value) CloseCatalogueOptions();
             Browser.Visibility = value ? Visibility.Visible : Visibility.Collapsed;
             ModelPath.IsReadOnly = !value;
             ModelPath.Tag = value ? "输入 SqPack 内的 .mdl 路径…" : "选择模型文件…";
@@ -80,6 +81,7 @@ public partial class ModelPreview : UserControl
 
     private void CancelWork()
     {
+        CloseCatalogueOptions();
         shaderRequest?.Cancel();
         scanCancellation?.Cancel();
         filterCancellation?.Cancel();
@@ -98,6 +100,7 @@ public partial class ModelPreview : UserControl
     {
         if (!IsVisible)
         {
+            CloseCatalogueOptions();
             scanCancellation?.Cancel();
             if (PlaybackStart != null) StopPlayback();
         }
@@ -134,7 +137,6 @@ public partial class ModelPreview : UserControl
             return;
         }
 
-        scanCancellation?.Cancel();
         using var cancellation = new CancellationTokenSource();
         loadCancellation = cancellation;
         var token = cancellation.Token;

@@ -31,7 +31,7 @@ public sealed partial class LocalGameSource
                 {
                     token.ThrowIfCancellationRequested();
                     if (category.TryGetFileDatOffset(hash, out var dat, out var offset) && offsets.TryGetValue(dat, out var entries))
-                        {
+                    {
                         if (!entries.TryGetValue(offset, out var aliases)) entries.Add(offset, aliases = []);
                         aliases.Add(hash);
                     }
@@ -61,12 +61,20 @@ public sealed partial class LocalGameSource
                 _ => BuildKnownModelNames(token, hashes)
             };
             var result = new List<SqPackModelLocation>();
+            var verifiedNames = new Dictionary<string, Dictionary<(long Offset, ulong Hash), string>>(StringComparer.OrdinalIgnoreCase);
+            var extension = kind switch { "image" => ".tex", "audio" => ".scd", _ => ".mdl" };
             foreach (var item in locations)
             {
                 token.ThrowIfCancellationRequested();
-                string? path = null;
+                if (!verifiedNames.TryGetValue(item.Container, out var containerNames))
+                {
+                    var imageOutsideUi = kind == "image" && !Path.GetFileName(item.Container).StartsWith("06", StringComparison.Ordinal);
+                    verifiedNames.Add(item.Container, containerNames = GetFileSystemMediaPaths(item.Container,
+                        imageOutsideUi ? ".atex" : extension, token, kind == "image" && !imageOutsideUi ? ".atex" : null));
+                }
+                string? path = containerNames.GetValueOrDefault((item.Offset, item.Hash));
                 var ambiguous = false;
-                if (kind == "model") path = ResolveCatalogModelPath(item.Container, item.Hash, token, out ambiguous);
+                if (path is null && kind == "model") path = ResolveCatalogModelPath(item.Container, item.Hash, token, out ambiguous);
                 if (path is null && !ambiguous) path = names.GetValueOrDefault(item.Hash);
                 if (path is null) continue;
                 // 哈希只在所属仓库和类别内有意义，防止跨容器误认路径。

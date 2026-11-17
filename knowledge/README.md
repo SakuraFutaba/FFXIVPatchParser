@@ -20,6 +20,8 @@ flowchart LR
 | 国服补丁怎么下载，ZIP 里哪些文件对应游戏里的哪些路径？ | [国服 V3 补丁](cn-patches.md) |
 | 整个 SqPack 文件树怎样从索引建立，未知文件名怎样打开？ | [文件系统索引与预览](sqpack-filesystem.md) |
 | SqPack 索引怎样定位文件，图片和音频 Diff 的候选怎样筛出来？ | [SqPack 与媒体](sqpack-media.md) |
+| ATEX 特效贴图怎样读取和导出？ | [ATEX 特效贴图](sqpack-media.md#atex-特效贴图) |
+| ULD 怎样描述界面坐标、纹理切片、组件和时间线？ | [ULD 界面资源与静态合成](uld.md) |
 | `Channeling.File` 怎样定位游戏里的连线特效？ | [Channeling 表与连线特效](sqpack-media.md#channeling-表与连线特效) |
 | EXL、EXH、EXD 各保存什么，Raw 快照怎样保留字段和子行？ | [Excel 表格与 Raw 快照](excel.md) |
 | 新旧表的数据来自哪里，字段关联和行列差异怎样比较？ | [表格 Diff 与关联](table-diff.md) |

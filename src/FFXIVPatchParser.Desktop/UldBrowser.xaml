@@ -1,0 +1,149 @@
+<UserControl x:Class="FFXIVPatchParser.Desktop.UldBrowser"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:local="clr-namespace:FFXIVPatchParser.Desktop">
+  <Grid>
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <DockPanel Margin="0,0,0,6">
+      <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" Margin="6,0,0,0">
+        <Button Style="{StaticResource PreviousItemButton}" Click="PreviousTheme" ToolTip="上一个主题" AutomationProperties.Name="上一个主题" Margin="0,0,6,0"/>
+        <ComboBox x:Name="Theme" local:ComboStep.HasExternalButtons="True" Width="112" SelectedIndex="0" SelectionChanged="ThemeChanged" AutomationProperties.Name="ULD 主题">
+          <ComboBoxItem Content="深色"/>
+          <ComboBoxItem Content="浅色"/>
+          <ComboBoxItem Content="经典 FF"/>
+          <ComboBoxItem Content="透明蓝"/>
+          <ComboBoxItem Content="透明白"/>
+          <ComboBoxItem Content="透明绿"/>
+        </ComboBox>
+        <Button Style="{StaticResource NextItemButton}" Click="NextTheme" Margin="6,0,0,0" ToolTip="下一个主题" AutomationProperties.Name="下一个主题"/>
+      </StackPanel>
+      <Button DockPanel.Dock="Right" Style="{StaticResource NextItemButton}" Click="NextUld" Margin="6,0,0,0" ToolTip="下一个 ULD" AutomationProperties.Name="下一个 ULD"/>
+      <Button DockPanel.Dock="Left" Style="{StaticResource PreviousItemButton}" Click="PreviousUld" ToolTip="上一个 ULD" AutomationProperties.Name="上一个 ULD" Margin="0,0,6,0"/>
+      <ComboBox x:Name="UldPath" local:ComboStep.HasExternalButtons="True" IsEditable="True" Text="ui/uld/ActionBar.uld" VerticalContentAlignment="Center"
+                ToolTip="输入 ULD 名称或路径。下拉列表显示已验证的路径。"
+                AutomationProperties.Name="ULD 文件" PreviewKeyDown="UldPathKeyDown" SelectionChanged="UldSelected"/>
+    </DockPanel>
+    <TabControl Grid.Row="1" Background="{StaticResource WorkspaceSurface}" BorderBrush="{StaticResource Border}">
+      <TabControl.Resources>
+        <Style TargetType="TabItem">
+          <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+          <Setter Property="Padding" Value="12,5"/>
+          <Setter Property="Template">
+            <Setter.Value>
+              <ControlTemplate TargetType="TabItem">
+                <Border x:Name="Tab" BorderThickness="0,0,0,2" BorderBrush="Transparent" Background="Transparent"
+                        CornerRadius="4,4,0,0" Padding="{TemplateBinding Padding}">
+                  <ContentPresenter ContentSource="Header" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                </Border>
+                <ControlTemplate.Triggers>
+                  <Trigger Property="IsMouseOver" Value="True">
+                    <Setter TargetName="Tab" Property="Background" Value="{StaticResource ControlHover}"/>
+                  </Trigger>
+                  <Trigger Property="IsSelected" Value="True">
+                    <Setter TargetName="Tab" Property="BorderBrush" Value="{StaticResource Accent}"/>
+                    <Setter Property="FontWeight" Value="SemiBold"/>
+                  </Trigger>
+                  <Trigger Property="IsKeyboardFocused" Value="True">
+                    <Setter TargetName="Tab" Property="Background" Value="{StaticResource ControlPressed}"/>
+                  </Trigger>
+                </ControlTemplate.Triggers>
+              </ControlTemplate>
+            </Setter.Value>
+          </Setter>
+        </Style>
+      </TabControl.Resources>
+      <TabItem Header="静态布局">
+        <Grid>
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+          <DockPanel Margin="8">
+            <TextBlock DockPanel.Dock="Left" Text="布局 / 组件" VerticalAlignment="Center"/>
+            <StackPanel x:Name="LayoutPicker" DockPanel.Dock="Left" Orientation="Horizontal" Margin="10,0">
+              <Button x:Name="PreviousLayoutButton" Style="{StaticResource PreviousItemButton}" Click="PreviousLayout" ToolTip="上一个布局或组件" AutomationProperties.Name="上一个布局或组件" IsEnabled="False" Margin="0,0,4,0"/>
+              <ComboBox x:Name="Layouts" local:ComboStep.HasExternalButtons="True" Width="192" SelectionChanged="SelectedLayoutChanged" AutomationProperties.Name="布局或组件"/>
+              <Button x:Name="NextLayoutButton" Style="{StaticResource NextItemButton}" Click="NextLayout" Margin="4,0,0,0" ToolTip="下一个布局或组件" AutomationProperties.Name="下一个布局或组件" IsEnabled="False"/>
+            </StackPanel>
+            <CheckBox DockPanel.Dock="Left" x:Name="ShowHidden" Content="显示隐藏节点"
+                      Checked="LayoutChanged" Unchecked="LayoutChanged" VerticalAlignment="Center"/>
+            <CheckBox DockPanel.Dock="Left" x:Name="ShowNodeMarkers" Content="节点边框和 ID"
+                      Checked="NodeMarkersChanged" Unchecked="NodeMarkersChanged" VerticalAlignment="Center" Margin="12,0,0,0"/>
+            <TextBlock x:Name="RenderInfo" Foreground="{StaticResource Muted}" Margin="12,0,0,0" VerticalAlignment="Center" TextWrapping="Wrap"/>
+          </DockPanel>
+          <DockPanel x:Name="TimelineControls" Grid.Row="1" Margin="8,0,8,8" IsEnabled="False">
+            <TextBlock DockPanel.Dock="Left" Text="时间线" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <Button DockPanel.Dock="Left" Style="{StaticResource PreviousItemButton}" Click="PreviousFrame" ToolTip="上一帧" AutomationProperties.Name="上一帧" Margin="0,0,6,0"/>
+            <Button x:Name="ResetTimelineButton" DockPanel.Dock="Right" Content="恢复初始帧" Click="ResetTimeline" Margin="8,0,0,0" ToolTip="清除时间线取样，恢复节点的初始位置、旋转、缩放和透明度"/>
+            <TextBlock DockPanel.Dock="Right" x:Name="FrameInfo" Width="104" TextAlignment="Center" VerticalAlignment="Center"/>
+            <Button DockPanel.Dock="Right" Style="{StaticResource NextItemButton}" Click="NextFrame" Margin="4,0,0,0" ToolTip="下一帧" AutomationProperties.Name="下一帧"/>
+            <Slider x:Name="TimelineFrame" Minimum="0" Maximum="1" TickFrequency="1" IsSnapToTickEnabled="True"
+                    SmallChange="1" LargeChange="10" IsMoveToPointEnabled="True" ValueChanged="TimelineFrameChanged"
+                    AutoToolTipPlacement="None" AutomationProperties.Name="ULD 时间线帧" VerticalAlignment="Center"/>
+          </DockPanel>
+          <ScrollViewer x:Name="PreviewScroll" Grid.Row="2" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                        Background="#20252E" ToolTip="展示 ULD 静态节点。文字、图标和可见性等状态可能由游戏运行时设置。">
+            <Grid MinWidth="{Binding ViewportWidth, ElementName=PreviewScroll}" MinHeight="{Binding ViewportHeight, ElementName=PreviewScroll}">
+              <Canvas x:Name="PreviewCanvas" Width="0" Height="0" Margin="16"
+                      HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </Grid>
+          </ScrollViewer>
+        </Grid>
+      </TabItem>
+      <TabItem Header="纹理资源">
+        <Grid>
+          <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+          <DataGrid x:Name="Assets" SelectionChanged="AssetSelected">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="ID" Binding="{Binding Id}"/>
+              <DataGridTextColumn Header="路径" Binding="{Binding Path}" Width="*"/>
+              <DataGridTextColumn Header="主题标记" Binding="{Binding ThemeMask}"/>
+              <DataGridTextColumn Header="图标 ID" Binding="{Binding IconId}"/>
+            </DataGrid.Columns>
+          </DataGrid>
+          <ScrollViewer Grid.Column="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+              <DockPanel Margin="8">
+                <Button DockPanel.Dock="Right" x:Name="CopyTexturePath" Style="{StaticResource CopyButton}" Content="复制纹理路径"
+                        Click="CopyResourcePath" IsEnabled="False" Margin="8,0,0,0"/>
+                <TextBlock x:Name="AssetInfo" TextWrapping="Wrap"/>
+              </DockPanel>
+              <Image x:Name="AssetImage" Stretch="None" HorizontalAlignment="Left"/>
+              <StackPanel x:Name="BaseAssetPreview" Visibility="Collapsed" Margin="0,12,0,0">
+                <TextBlock x:Name="BaseAssetInfo" TextWrapping="Wrap" Margin="8"/>
+                <Image x:Name="BaseAssetImage" Stretch="None" HorizontalAlignment="Left"/>
+              </StackPanel>
+            </StackPanel>
+          </ScrollViewer>
+        </Grid>
+      </TabItem>
+      <TabItem Header="Parts 切片">
+        <Grid>
+          <Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
+          <DataGrid x:Name="Parts" SelectionChanged="PartSelected">
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="部件组" Binding="{Binding List}"/>
+              <DataGridTextColumn Header="索引" Binding="{Binding Index}"/>
+              <DataGridTextColumn Header="纹理 ID" Binding="{Binding Texture}"/>
+              <DataGridTextColumn Header="U" Binding="{Binding U}"/>
+              <DataGridTextColumn Header="V" Binding="{Binding V}"/>
+              <DataGridTextColumn Header="宽" Binding="{Binding Width}"/>
+              <DataGridTextColumn Header="高" Binding="{Binding Height}"/>
+            </DataGrid.Columns>
+          </DataGrid>
+          <ScrollViewer Grid.Column="1" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+              <DockPanel Margin="8">
+                <Button DockPanel.Dock="Right" x:Name="CopyPartPath" Style="{StaticResource CopyButton}" Content="复制切片纹理路径"
+                        Click="CopyResourcePath" IsEnabled="False" Margin="8,0,0,0"/>
+                <TextBlock x:Name="PartInfo" TextWrapping="Wrap"/>
+              </DockPanel>
+              <Image x:Name="PartImage" Stretch="None" HorizontalAlignment="Left"/>
+            </StackPanel>
+          </ScrollViewer>
+        </Grid>
+      </TabItem>
+      <TabItem Header="时间线"><TreeView x:Name="TimelineTree" Style="{StaticResource CompactPathTree}"/></TabItem>
+      <TabItem Header="节点与组件"><TreeView x:Name="NodeTree" Style="{StaticResource CompactPathTree}"/></TabItem>
+    </TabControl>
+    <TextBlock x:Name="Status" Grid.Row="2" Text="请在设置中连接游戏目录，然后读取 ULD。"
+               Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,6,0,0"
+               AutomationProperties.LiveSetting="Polite"/>
+  </Grid>
+</UserControl>

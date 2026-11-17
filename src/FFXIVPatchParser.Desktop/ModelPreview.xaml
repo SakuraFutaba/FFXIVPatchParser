@@ -8,26 +8,11 @@
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto"/>
         <RowDefinition Height="*"/>
-        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto" SharedSizeGroup="BrowserFooter"/>
       </Grid.RowDefinitions>
       <StackPanel Margin="0,0,0,6">
-        <ComboBox x:Name="ModelMode" SelectedIndex="0" SelectionChanged="ModelModeChanged" Margin="0,0,0,6" AutomationProperties.Name="模型目录视图">
-          <ComboBoxItem Content="按名称分类"/>
-          <ComboBoxItem Content="按模型编号"/>
-          <ComboBoxItem Content="索引扫描结果"/>
-        </ComboBox>
         <TextBox x:Name="ModelSearch" Style="{StaticResource SearchTextBox}" Tag="名称、编号或路径…" AutomationProperties.Name="筛选模型"
                  TextChanged="FilterModels" IsEnabled="False"/>
-        <Button x:Name="NpcNamesButton" Content="补充 NPC 名称" Click="DownloadNpcNames" Padding="6,3" Margin="0,6,0,0"
-                HorizontalAlignment="Left" ToolTip="读取 Anamnesis 名称映射，尝试更新中文对照，再重建模型目录。"/>
-        <Expander Header="扫描选项" Margin="0,6,0,0">
-          <StackPanel>
-            <CheckBox x:Name="ScanAllModels" Content="包含场景等模型（较慢）" Margin="0,6,0,0"
-                      ToolTip="默认扫描角色容器。勾选后再次扫描可查找其他容器中的模型。"/>
-            <Button x:Name="ModelPathsButton" Content="导入已知模型路径" Click="ImportModelPaths" Padding="6,3" Margin="0,6,0,0" HorizontalAlignment="Left"
-                    ToolTip="导入每行一个游戏内 .mdl 路径的 UTF-8 文本。匹配本地索引后显示路径，未知项仍保留 SqPack 地址。"/>
-          </StackPanel>
-        </Expander>
       </StackPanel>
       <TreeView x:Name="ModelTree" Grid.Row="1" Style="{StaticResource CompactPathTree}" SelectedItemChanged="ModelSelected">
         <TreeView.ItemTemplate>
@@ -37,6 +22,7 @@
         </TreeView.ItemTemplate>
       </TreeView>
       <TextBlock x:Name="BrowserStatus" Grid.Row="2" Text="尚未扫描" Foreground="{StaticResource Muted}" Margin="0,6,0,0"
+                 VerticalAlignment="Top"
                  TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
     </Grid>
     <Grid>
@@ -44,13 +30,49 @@
         <RowDefinition Height="Auto"/>
         <RowDefinition Height="Auto"/>
         <RowDefinition Height="*"/>
-        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto" SharedSizeGroup="BrowserFooter"/>
       </Grid.RowDefinitions>
       <DockPanel Margin="0,0,0,6">
-        <Button x:Name="LoadButton" DockPanel.Dock="Right" Content="读取模型" Style="{StaticResource Primary}" Click="LoadModel" Margin="6,0,0,0"/>
-        <TextBox x:Name="ModelPath" Tag="输入 SqPack 内的 .mdl 路径…" KeyDown="ModelPathKeyDown"
+        <Button x:Name="LoadButton" DockPanel.Dock="Right" Content="读取模型" Style="{StaticResource Primary}" Click="LoadModel"
+                Margin="6,0,0,0" VerticalAlignment="Top"/>
+        <Button x:Name="CatalogueOptions" DockPanel.Dock="Right" Click="ToggleCatalogueOptions" Margin="8,0,0,0"
+                VerticalAlignment="Top" Visibility="{Binding Visibility, ElementName=Browser}"
+                AutomationProperties.Name="模型目录选项">
+          <StackPanel Orientation="Horizontal">
+            <TextBlock Text="目录选项"/>
+            <Path Width="8" Height="4" Data="M 0,0 L 4,4 L 8,0" Stroke="{StaticResource Muted}" StrokeThickness="1.4"
+                  StrokeStartLineCap="Round" StrokeEndLineCap="Round" VerticalAlignment="Center" Margin="6,0,0,0"/>
+          </StackPanel>
+        </Button>
+        <TextBox x:Name="ModelPath" Tag="输入 SqPack 内的 .mdl 路径…" KeyDown="ModelPathKeyDown" VerticalAlignment="Top"
                  AutomationProperties.Name="模型路径" ToolTip="例如 chara/human/c0101/obj/hair/h0001/model/c0101h0001_hir.mdl"/>
       </DockPanel>
+      <Popup x:Name="CatalogueOptionsPopup" PlacementTarget="{Binding ElementName=CatalogueOptions}" Placement="Bottom"
+             AllowsTransparency="True" VerticalOffset="5" Opened="CatalogueOptionsOpened" Closed="CatalogueOptionsClosed">
+          <Border x:Name="CatalogueOptionsPanel" Background="{StaticResource WorkspaceSurface}" BorderBrush="{StaticResource Border}"
+                  BorderThickness="1" CornerRadius="8" Padding="10" PreviewKeyDown="CatalogueOptionsKeyDown"
+                  KeyboardNavigation.TabNavigation="Cycle">
+            <StackPanel Width="235">
+              <ComboBox x:Name="ModelMode" SelectedIndex="0" SelectionChanged="ModelModeChanged" Margin="0,0,0,6" AutomationProperties.Name="模型目录视图">
+                <ComboBoxItem Content="按来源分类"/>
+                <ComboBoxItem Content="按模型编号"/>
+                <ComboBoxItem Content="全部已知模型路径"/>
+              </ComboBox>
+              <Button x:Name="NpcNamesButton" Content="补充 NPC 名称" Click="DownloadNpcNames" Padding="6,3" Margin="0,6,0,0"
+                      HorizontalAlignment="Left" ToolTip="读取 Anamnesis 名称映射，尝试更新中文对照，再重建模型目录。"/>
+              <Expander x:Name="CatalogueScanOptions" Header="扫描选项" Margin="0,6,0,0">
+                <StackPanel>
+                  <Button x:Name="UnknownModelsButton" Content="扫描未知模型" Click="ScanUnknownModels" Padding="6,3" Margin="0,6,0,0" HorizontalAlignment="Left"
+                          ToolTip="逐项读取 DAT 文件头，查找没有已知路径的模型；可能耗时较长。"/>
+                  <CheckBox x:Name="ScanAllModels" Content="包含场景等模型（较慢）" Margin="0,6,0,0"
+                            ToolTip="默认扫描角色容器。勾选后再次扫描可查找其他容器中的模型。"/>
+                  <Button x:Name="ModelPathsButton" Content="导入已知模型路径" Click="ImportModelPaths" Padding="6,3" Margin="0,6,0,0" HorizontalAlignment="Left"
+                          ToolTip="导入每行一个游戏内 .mdl 路径的 UTF-8 文本。匹配本地索引后显示路径，未知项仍保留 SqPack 地址。"/>
+                </StackPanel>
+              </Expander>
+            </StackPanel>
+          </Border>
+      </Popup>
       <WrapPanel Grid.Row="1" Margin="0,0,0,6">
         <Button x:Name="ResetButton" Content="重置视图" Padding="9,4" IsEnabled="False" Click="ResetView"/>
         <CheckBox x:Name="UseTextures" Content="基础色纹理" IsChecked="True" IsEnabled="False" Margin="0,0,12,0"
@@ -60,9 +82,9 @@
                  AutomationProperties.Name="材质变体" ToolTip="输入变体编号后按 Enter 或重新读取模型"/>
       </WrapPanel>
       <DockPanel Grid.Row="2">
-        <Border x:Name="Inspector" DockPanel.Dock="Right" Width="208" Margin="8,0,0,0" Background="White"
+        <Border x:Name="Inspector" DockPanel.Dock="Right" Width="208" Margin="8,0,0,0" Background="{StaticResource WorkspaceSurface}"
                 BorderBrush="#E4E7EC" BorderThickness="1" CornerRadius="6" Padding="9" Visibility="Collapsed">
-          <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+          <ScrollViewer Style="{StaticResource OverlayDetailScroll}">
             <StackPanel>
               <TextBlock x:Name="ModelEntryInfo" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,0,0,8"/>
               <WrapPanel x:Name="ModelTableLinks" Visibility="Collapsed" Margin="0,0,0,8">
@@ -104,9 +126,9 @@
                       <ColumnDefinition Width="*"/>
                       <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <Button x:Name="PreviousAction" Content="‹" Click="SelectPreviousAction" Width="25" Padding="0" Margin="0,0,4,0"
+                    <Button x:Name="PreviousAction" Style="{StaticResource PreviousItemButton}" Click="SelectPreviousAction" Margin="0,0,4,0"
                             IsEnabled="False" ToolTip="上一个动作文件" AutomationProperties.Name="上一个动作文件"/>
-                    <ComboBox x:Name="ActionChoice" Grid.Column="1" SelectionChanged="ActionSelected" ScrollViewer.CanContentScroll="True"
+                    <ComboBox x:Name="ActionChoice" local:ComboStep.HasExternalButtons="True" Grid.Column="1" SelectionChanged="ActionSelected" ScrollViewer.CanContentScroll="True"
                               VirtualizingPanel.VirtualizationMode="Recycling" AutomationProperties.Name="模型动作资源" IsEnabled="False" Padding="5,3">
                       <ComboBox.ItemsPanel>
                         <ItemsPanelTemplate><VirtualizingStackPanel/></ItemsPanelTemplate>
@@ -115,7 +137,7 @@
                         <DataTemplate><TextBlock Text="{Binding Label}" ToolTip="{Binding Path}" TextTrimming="CharacterEllipsis"/></DataTemplate>
                       </ComboBox.ItemTemplate>
                     </ComboBox>
-                    <Button x:Name="NextAction" Grid.Column="2" Content="›" Click="SelectNextAction" Width="25" Padding="0" Margin="4,0,0,0"
+                    <Button x:Name="NextAction" Grid.Column="2" Style="{StaticResource NextItemButton}" Click="SelectNextAction" Margin="4,0,0,0"
                             IsEnabled="False" ToolTip="下一个动作文件" AutomationProperties.Name="下一个动作文件"/>
                   </Grid>
 
@@ -125,13 +147,13 @@
                       <ColumnDefinition Width="*"/>
                       <ColumnDefinition Width="Auto"/>
                     </Grid.ColumnDefinitions>
-                    <Button x:Name="PreviousPlaybackSlot" Content="‹" Click="SelectPreviousPlaybackSlot" Width="25" Padding="0" Margin="0,0,4,0"
+                    <Button x:Name="PreviousPlaybackSlot" Style="{StaticResource PreviousItemButton}" Click="SelectPreviousPlaybackSlot" Margin="0,0,4,0"
                             ToolTip="上一个动作槽" AutomationProperties.Name="上一个动作槽"/>
-                    <ComboBox x:Name="PlaybackSlot" Grid.Column="1" SelectionChanged="PlaybackSlotChanged" AutomationProperties.Name="动作槽"
+                    <ComboBox x:Name="PlaybackSlot" local:ComboStep.HasExternalButtons="True" Grid.Column="1" SelectionChanged="PlaybackSlotChanged" AutomationProperties.Name="动作槽"
                               Padding="5,3">
                       <ComboBox.ItemTemplate><DataTemplate><TextBlock TextTrimming="CharacterEllipsis"><Run Text="{Binding Index, Mode=OneWay}"/><Run Text=" · "/><Run Text="{Binding Name, Mode=OneWay}"/></TextBlock></DataTemplate></ComboBox.ItemTemplate>
                     </ComboBox>
-                    <Button x:Name="NextPlaybackSlot" Grid.Column="2" Content="›" Click="SelectNextPlaybackSlot" Width="25" Padding="0" Margin="4,0,0,0"
+                    <Button x:Name="NextPlaybackSlot" Grid.Column="2" Style="{StaticResource NextItemButton}" Click="SelectNextPlaybackSlot" Margin="4,0,0,0"
                             ToolTip="下一个动作槽" AutomationProperties.Name="下一个动作槽"/>
                   </Grid>
                   <TextBlock x:Name="ActionDiscoveryStatus" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,5,0,0"/>
@@ -149,7 +171,7 @@
             </StackPanel>
           </ScrollViewer>
         </Border>
-        <Border x:Name="ModelSurface" Background="#202B3A" CornerRadius="6" ClipToBounds="True"
+        <Border x:Name="ModelSurface" Background="#202B3A" CornerRadius="6" ClipToBounds="True" FocusVisualStyle="{x:Null}"
                 Focusable="True" AutomationProperties.Name="3D 模型视口">
           <Grid>
             <Viewport3D x:Name="ModelViewport" IsHitTestVisible="False" ClipToBounds="True">
@@ -177,6 +199,7 @@
         </Border>
       </DockPanel>
       <TextBlock x:Name="ModelInfo" Grid.Row="3" Foreground="{StaticResource Muted}" Margin="0,6,0,0"
+                 VerticalAlignment="Top"
                  TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"
                  AutomationProperties.LiveSetting="Polite"/>
     </Grid>

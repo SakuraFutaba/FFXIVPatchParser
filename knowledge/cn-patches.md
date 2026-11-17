@@ -67,3 +67,9 @@ VCDIFF 用旧文件正向构造目标，被删除或覆盖的旧字节可能没�
 2026-11-13 本项目实测：国服中文 7.58（构建 `2026.11.03.0000.0000`）对应 `.30 → .31` 补丁的 47 个资源全部通过 DeltaMD5 和区间解析，共得到 9,341 个合并写入区间；其中 Excel 的 DAT、index、index2 三个本地文件通过 ResultMD5，且成功读取首个写入区间。合成样本验证了旧新同偏移读取、EOF 截断、错误摘要拒绝、缺少旧版、空旧文件、目录选择、路径越界拒绝、取消和临时文件清理。旧版真实客户端尚未用于此功能验证，因此旧新对照的结论来自合成样本。
 
 后续可按文件类型提供结构注释。对 `ffxiv_dx11.exe` 一类 PE 文件，可先标注文件偏移对应的节，只在代码节中尝试反汇编。对于数据节，保留十六进制和结构说明。
+
+## Thaliak 的版本追踪
+
+Thaliak 跟踪国际服、韩服和国服的版本，公开补丁元数据，并支持 Discord 更新通知。仓库 README 记录了 GraphQL，v2 源码另提供 REST 接口和可下载的 SQLite 数据库。v2 的补丁路由能从起始版本查询补丁链，分析服务还会计算应用补丁后文件的 SHA-1、SHA-256 和 MD5。 [项目说明](https://github.com/CrystallineTools/Thaliak) · [补丁链路由](https://github.com/CrystallineTools/Thaliak/blob/main/v2/thaliak-api/src/routes/patches.rs) · [分析服务](https://github.com/CrystallineTools/Thaliak/blob/main/v2/thaliak-analysis/src/main.rs)
+
+本项目已有国服 ZIP 目录、下载、MD5 校验和内容 Diff。Thaliak 可作为多地区历史版本的数据来源，优先用版本链补齐历史包和匹配基线，然后再将对应构建的资源交给 Diff。国际服 ZiPatch 与国服 ZIP/VCDIFF 的容器格式不同，接入后仍需分别解析。

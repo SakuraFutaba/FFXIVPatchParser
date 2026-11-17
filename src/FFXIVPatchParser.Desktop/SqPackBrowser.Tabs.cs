@@ -1,10 +1,19 @@
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 
 namespace FFXIVPatchParser.Desktop;
 
 public partial class SqPackBrowser
 {
+    internal void SetTableTabHeader(ContentControl header, bool useHeader)
+    {
+        var target = useHeader ? header : InlineTableTabs;
+        if (target.Content == TableTabsScroll) return;
+        (useHeader ? InlineTableTabs : header).Content = null;
+        target.Content = TableTabsScroll;
+    }
+
     private sealed record LocalTableState(TablePage? Page, int Offset, KeyValuePair<int, string>[] Filters, bool Related, Action Restore);
     private readonly TableTabCollection<LocalTableState> localTableTabs = new();
     public string? CurrentTableName => selectedTable;

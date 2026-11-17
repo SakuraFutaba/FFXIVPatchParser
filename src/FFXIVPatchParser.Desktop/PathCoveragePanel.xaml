@@ -1,0 +1,68 @@
+<UserControl x:Class="FFXIVPatchParser.Desktop.PathCoveragePanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             Width="550" Height="352" FontFamily="Microsoft YaHei UI" FontSize="12"
+             Foreground="{StaticResource Ink}" UseLayoutRounding="True"
+             KeyboardNavigation.TabNavigation="Cycle" PreviewKeyDown="PanelKeyDown"
+             AutomationProperties.Name="SqPack 路径补全">
+  <UserControl.Resources>
+    <Style x:Key="CoverageAction" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+      <Setter Property="Padding" Value="8,4"/>
+      <Setter Property="Margin" Value="0,0,6,0"/>
+    </Style>
+  </UserControl.Resources>
+  <Grid Margin="6">
+    <Border CornerRadius="10" Background="{StaticResource WorkspaceSurface}" IsHitTestVisible="False">
+      <Border.Effect><DropShadowEffect Color="#344763" Opacity="0.24" BlurRadius="12" ShadowDepth="2"/></Border.Effect>
+    </Border>
+    <Border CornerRadius="10" Background="{StaticResource WorkspaceSurface}" BorderBrush="{StaticResource Border}"
+            BorderThickness="1" Padding="12,9,12,10">
+      <Grid>
+        <Grid.RowDefinitions>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="*"/>
+          <RowDefinition Height="Auto"/>
+          <RowDefinition Height="Auto"/>
+        </Grid.RowDefinitions>
+        <StackPanel Margin="0,0,0,8">
+          <DockPanel>
+            <Button x:Name="CloseCoverageButton" DockPanel.Dock="Right" Style="{StaticResource ClearSearchButton}" Click="ClosePanel"
+                    ToolTip="关闭路径补全" AutomationProperties.Name="关闭路径补全"/>
+            <TextBlock Text="SqPack 路径补全" FontSize="14" FontWeight="SemiBold" VerticalAlignment="Center"/>
+          </DockPanel>
+          <TextBlock x:Name="CoverageSummary" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,3,0,0"/>
+        </StackPanel>
+        <Border Grid.Row="1" Style="{StaticResource RoundedPreviewFrame}">
+          <DataGrid x:Name="Containers" BorderThickness="0" IsReadOnly="True" AutoGenerateColumns="False" HeadersVisibility="Column"
+                    RowHeight="24" ColumnHeaderHeight="26" AutomationProperties.Name="各容器的路径统计">
+            <DataGrid.ColumnHeaderStyle>
+              <Style TargetType="DataGridColumnHeader" BasedOn="{StaticResource {x:Type DataGridColumnHeader}}">
+                <Setter Property="Padding" Value="10,3"/>
+              </Style>
+            </DataGrid.ColumnHeaderStyle>
+            <DataGrid.Columns>
+              <DataGridTextColumn Header="类别" Binding="{Binding Category}" Width="95"/>
+              <DataGridTextColumn Header="容器" Binding="{Binding Container}" Width="*"/>
+              <DataGridTextColumn Header="总计" Binding="{Binding Total, StringFormat=N0}" Width="76"/>
+              <DataGridTextColumn Header="已知路径" Binding="{Binding Named, StringFormat=N0}" Width="78"/>
+              <DataGridTextColumn Header="未知路径" Binding="{Binding Unknown, StringFormat=N0}" Width="78" SortDirection="Descending"/>
+            </DataGrid.Columns>
+          </DataGrid>
+        </Border>
+        <TextBlock x:Name="OperationStatus" Grid.Row="2" Foreground="{StaticResource Muted}"
+                   LineHeight="16" LineStackingStrategy="BlockLineHeight" TextWrapping="Wrap" TextTrimming="CharacterEllipsis"
+                   Height="32" Margin="0,6,0,3" AutomationProperties.LiveSetting="Polite"
+                   ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+        <StackPanel Grid.Row="3" Orientation="Horizontal">
+          <Button x:Name="ImportCommunityButton" Style="{StaticResource CoverageAction}" Content="导入 ResLogger2" Click="ImportCommunity"
+                  IsEnabled="False" ToolTip="下载公开路径清单并与本地索引核对。已有下载时直接使用缓存。"/>
+          <Button x:Name="ImportLocalButton" Style="{StaticResource CoverageAction}" Content="导入清单…" Click="ImportLocal"
+                  IsEnabled="False" ToolTip="选择每行一个路径的文本，或路径位于最后一列的 CSV / TSV 清单。"/>
+          <Button x:Name="ScanButton" Style="{StaticResource CoverageAction}" Content="扫描下一批引用" Click="Scan"
+                  IsEnabled="False" ToolTip="按容器顺序从游戏资源内查找完整路径引用，完成一批后记住进度。"/>
+          <Button x:Name="CancelButton" Style="{StaticResource CoverageAction}" Content="取消操作" Click="CancelOperation" Visibility="Collapsed"/>
+        </StackPanel>
+      </Grid>
+    </Border>
+  </Grid>
+</UserControl>

@@ -1,0 +1,178 @@
+{
+  "sheet": "TerritoryIntendedUse",
+  "schemaHash": "93B5E5221547D3C8820E1C484D400371D7D3DDD5D5DB41BD53BCD543F9C47450",
+  "definitions": [
+    {
+      "index": 0,
+      "name": "Flags05Bit0"
+    },
+    {
+      "index": 1,
+      "name": "Flags05Bit1"
+    },
+    {
+      "index": 2,
+      "name": "Flags05Bit2"
+    },
+    {
+      "index": 3,
+      "name": "Flags05Bit3"
+    },
+    {
+      "index": 4,
+      "name": "Flags05Bit4"
+    },
+    {
+      "index": 5,
+      "name": "Flags05Bit5"
+    },
+    {
+      "index": 6,
+      "name": "Flags05Bit6"
+    },
+    {
+      "index": 7,
+      "name": "Flags05Bit7"
+    },
+    {
+      "index": 8,
+      "name": "Flags06Bit0"
+    },
+    {
+      "index": 9,
+      "name": "Flags06Bit1"
+    },
+    {
+      "index": 10,
+      "name": "Flags06Bit2"
+    },
+    {
+      "index": 11,
+      "name": "Flags06Bit3"
+    },
+    {
+      "index": 12,
+      "name": "Flags06Bit4"
+    },
+    {
+      "index": 13,
+      "name": "Flags06Bit5"
+    },
+    {
+      "index": 14,
+      "name": "Flags06Bit6"
+    },
+    {
+      "index": 15,
+      "name": "Flags06Bit7"
+    },
+    {
+      "index": 16,
+      "name": "Flags07Bit0"
+    },
+    {
+      "index": 17,
+      "name": "Flags07Bit1"
+    },
+    {
+      "index": 18,
+      "name": "Flags07Bit2"
+    },
+    {
+      "index": 19,
+      "name": "UInt16Offset00"
+    },
+    {
+      "index": 20,
+      "name": "UInt8Offset02"
+    },
+    {
+      "index": 21,
+      "name": "Flags07Bit3"
+    },
+    {
+      "index": 22,
+      "name": "Flags07Bit4"
+    },
+    {
+      "index": 23,
+      "name": "Flags07Bit5"
+    },
+    {
+      "index": 24,
+      "name": "Flags07Bit6"
+    },
+    {
+      "index": 25,
+      "name": "Flags07Bit7"
+    },
+    {
+      "index": 26,
+      "name": "Flags08Bit0"
+    },
+    {
+      "index": 27,
+      "name": "Flags08Bit1"
+    },
+    {
+      "index": 28,
+      "name": "Flags08Bit2"
+    },
+    {
+      "index": 29,
+      "name": "Flags08Bit3"
+    },
+    {
+      "index": 30,
+      "name": "Flags08Bit4"
+    },
+    {
+      "index": 31,
+      "name": "Flags08Bit5"
+    },
+    {
+      "index": 32,
+      "name": "Flags08Bit6"
+    },
+    {
+      "index": 33,
+      "name": "UInt8Offset03"
+    },
+    {
+      "index": 34,
+      "name": "Flags08Bit7"
+    },
+    {
+      "index": 35,
+      "name": "Flags09Bit0"
+    },
+    {
+      "index": 36,
+      "name": "UInt8Offset04"
+    },
+    {
+      "index": 37,
+      "name": "Flags09Bit1"
+    },
+    {
+      "index": 38,
+      "name": "Flags09Bit2"
+    },
+    {
+      "index": 39,
+      "name": "Flags09Bit3"
+    },
+    {
+      "index": 40,
+      "name": "Flags09Bit4"
+    },
+    {
+      "index": 41,
+      "name": "Flags09Bit5"
+    },
+    {
+      "index": 42,
+      "name": "Flags09Bit6"
+    }
+  ]
+}

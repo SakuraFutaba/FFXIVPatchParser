@@ -33,6 +33,7 @@ public partial class MainWindow : Window
         ready = true;
         activeNavigation = PatchNav;
         SqPackView.NavigationStarting += RememberNavigation;
+        MusicPlayer.AudioPageRequested += SqPackView.ShowAudioFromPlayerAsync;
         SqPackView.PageRequested += page =>
         {
             var destination = page switch
@@ -45,12 +46,14 @@ public partial class MainWindow : Window
                 _ => null
             };
             if (destination != null) destination.IsChecked = true;
+            if (page == SqPackPage.Images) TexturePageTab.IsChecked = true;
         };
         SqPackView.MediaControlsChanged += UpdateMediaControls;
         SqPackView.GameVersionChanged += () =>
         {
             SqPackVersion.Text = SqPackView.GameVersionLabel;
             ResourceHexView.RefreshLocalFiles();
+            MusicPlayer.SetSource(SqPackView.ConnectedGame);
         };
         ResourceHexView.GetTargetDirectory = () => SqPackView.ConnectedGamePath ?? SqPackBrowser.RememberedGamePath();
         PreviewMouseDown += DismissCellDetailsOnOutsideClick;
@@ -67,6 +70,7 @@ public partial class MainWindow : Window
         });
         Closed += (_, _) =>
         {
+            MusicPlayer.Dispose();
             ResourceHexView.Dispose();
             operation?.Cancel();
             relationOperation?.Cancel();
@@ -124,21 +128,29 @@ public partial class MainWindow : Window
         else SqPackView.SuspendFilePreview();
         SqPackView.Visibility = page != null ? Visibility.Visible : Visibility.Collapsed;
         PageTitle.Text = title;
+        DiffTableHeader.Visibility = DiffView.Visibility;
+        ImagePageTabs.Visibility = page == SqPackPage.Images ? Visibility.Visible : Visibility.Collapsed;
+        SqPackView.SetTableTabHeader(LocalTableHeader, page == SqPackPage.Tables);
         UpdateMediaControls();
         UpdateMainStatusVisibility();
 
         static Visibility Visible(RadioButton item) => item.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
     }
 
+    private void ImagePageChanged(object sender, RoutedEventArgs e)
+    {
+        if (!ready) return;
+        SqPackView.ShowImagePage(sender == IconPageTab ? ImagePage.Icons :
+            sender == UldPageTab ? ImagePage.Uld : ImagePage.Textures);
+    }
+
     private void UpdateMediaControls()
     {
         var onBrowser = SqPackView.Visibility == Visibility.Visible;
-        ScanMediaButton.Visibility = onBrowser && SqPackView.IsMediaPage ? Visibility.Visible : Visibility.Collapsed;
+        ScanMediaButton.Visibility = onBrowser && SqPackView.IsPatchMediaPage ? Visibility.Visible : Visibility.Collapsed;
         ScanMediaButton.IsEnabled = SqPackView.CanScanMedia;
-        ScanMediaButton.Content = SqPackView.IsPatchMediaPage ? "完整扫描" : "扫描资源索引";
-        ScanMediaButton.ToolTip = SqPackView.IsPatchMediaPage
-            ? "校验本地目标容器，补查原始路径未识别的资源。"
-            : "扫描 SqPack 索引，查找已知目录之外的资源。";
+        ScanMediaButton.Content = "完整扫描";
+        ScanMediaButton.ToolTip = "校验本地目标容器，补查原始路径未识别的资源。";
     }
 
     private async void ScanCurrentMedia(object sender, RoutedEventArgs e) => await SqPackView.ScanCurrentMediaAsync();

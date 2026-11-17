@@ -1,0 +1,26 @@
+{
+  "sheet": "WeatherRate",
+  "schemaHash": "84F0B051EF96CC328D0B36C28D7A6A942AAB6DBE19492161F36B317EC638F054",
+  "definitions": [
+    {
+      "index": 0,
+      "type": "repeat",
+      "count": 8,
+      "definition": {
+        "type": "group",
+        "members": [
+          {
+            "name": "Weather",
+            "converter": {
+              "type": "link",
+              "target": "Weather"
+            }
+          },
+          {
+            "name": "Rate"
+          }
+        ]
+      }
+    }
+  ]
+}

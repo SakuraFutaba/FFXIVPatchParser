@@ -66,7 +66,7 @@
       <RowDefinition Height="*"/>
       <RowDefinition Height="Auto"/>
     </Grid.RowDefinitions>
-    <Grid>
+    <Grid Grid.IsSharedSizeScope="True">
       <Grid.ColumnDefinitions>
         <ColumnDefinition x:Name="FileTreeColumn" Width="0"/>
         <ColumnDefinition x:Name="FileDividerColumn" Width="0"/>
@@ -77,75 +77,107 @@
                     Background="Transparent" ResizeBehavior="PreviousAndNext" ShowsPreview="False"
                     AutomationProperties.Name="调整文件目录宽度" Visibility="Collapsed"/>
       <Grid Grid.Column="2">
-        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
-        <DockPanel x:Name="FileDetails" Visibility="Collapsed" Margin="0,0,0,8">
-          <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top" Margin="8,0,0,0">
-            <Button x:Name="SwitchFilePreviewButton" Content="查看 Hex" Click="SwitchFilePreview" Visibility="Collapsed"/>
-            <Button x:Name="JumpToFilePreviewButton" Click="JumpToFilePreview" Visibility="Collapsed"/>
-            <Button x:Name="CopyFilePathButton" Content="复制路径" Click="CopyFilePath" IsEnabled="False" Margin="0"/>
-          </StackPanel>
-          <StackPanel>
-            <TextBlock x:Name="FileSourcePath" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
-                       ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
-            <TextBlock x:Name="FileInfo" Foreground="{StaticResource Muted}" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"
-                       ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
-          </StackPanel>
-        </DockPanel>
-        <Grid Grid.Row="1">
-          <DockPanel x:Name="FileHexPanel" Visibility="Collapsed">
-            <StackPanel x:Name="FileHexNavigation" DockPanel.Dock="Top" Orientation="Horizontal" Margin="0,0,0,6" Visibility="Collapsed">
-              <Button x:Name="PreviousFileHexButton" Content="‹" ToolTip="上一个字节区间" AutomationProperties.Name="上一个字节区间" Click="PreviousFileHex"/>
-              <TextBox x:Name="FileOffsetInput" Width="116" Tag="十六进制偏移" KeyDown="FileOffsetKeyDown"
-                       AutomationProperties.Name="十六进制偏移"/>
-              <Button Content="跳转" Click="GoToFileOffset" Margin="6,0,0,0"/>
-              <Button x:Name="NextFileHexButton" Content="›" ToolTip="下一个字节区间" AutomationProperties.Name="下一个字节区间"
-                      Click="NextFileHex" Margin="6,0,0,0"/>
+        <Grid.RowDefinitions><RowDefinition x:Name="FileDetailsRow" Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+        <StackPanel x:Name="FileDetails" Visibility="Collapsed" Margin="0,0,0,6">
+          <DockPanel>
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top" Margin="8,0,0,0">
+              <Button x:Name="SwitchFilePreviewButton" Content="查看 Hex" Click="SwitchFilePreview" Visibility="Collapsed"/>
+              <Button x:Name="JumpToFilePreviewButton" Click="JumpToFilePreview" Visibility="Collapsed"/>
+              <Button x:Name="CopyFilePathButton" Style="{StaticResource CopyButton}" Content="复制路径" Click="CopyFilePath" IsEnabled="False" Margin="0"/>
             </StackPanel>
+            <StackPanel>
+              <TextBlock x:Name="FileSourcePath" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"
+                         ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+              <TextBlock x:Name="FileInfo" Foreground="{StaticResource Muted}" Margin="0,4,0,0" TextTrimming="CharacterEllipsis"
+                         ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}">
+                <TextBlock.Style>
+                  <Style TargetType="TextBlock">
+                    <Style.Triggers>
+                      <Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed"/></Trigger>
+                    </Style.Triggers>
+                  </Style>
+                </TextBlock.Style>
+              </TextBlock>
+              <TextBlock x:Name="FilePreviewIssue" Foreground="#9A3412" TextWrapping="Wrap"
+                         Margin="0,4,0,0" Visibility="Collapsed"/>
+            </StackPanel>
+          </DockPanel>
+        </StackPanel>
+        <Grid Grid.Row="1">
+          <Grid x:Name="FileHexPanel" Visibility="Collapsed">
+            <Grid.RowDefinitions>
+              <RowDefinition Height="*"/>
+              <RowDefinition Height="Auto" SharedSizeGroup="BrowserFooter"/>
+            </Grid.RowDefinitions>
             <TextBox x:Name="FileHexText" IsReadOnly="True" FontFamily="Cascadia Mono, Consolas" FontSize="12"
                      Padding="10,8" TextWrapping="NoWrap" VerticalContentAlignment="Top"
                      VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto"
                      AutomationProperties.Name="文件十六进制内容"/>
-          </DockPanel>
+            <Border x:Name="FileHexNavigation" HorizontalAlignment="Right" VerticalAlignment="Top"
+                    Margin="8,0,14,0" Padding="6" CornerRadius="0,0,6,6" BorderThickness="1"
+                    BorderBrush="{StaticResource Border}" Background="{StaticResource WorkspaceSurface}" Visibility="Collapsed">
+              <StackPanel Orientation="Horizontal">
+                <Button x:Name="PreviousFileHexButton" Style="{StaticResource PreviousItemButton}" Margin="0,0,8,0" ToolTip="上一个字节区间" AutomationProperties.Name="上一个字节区间" Click="PreviousFileHex"/>
+                <TextBox x:Name="FileOffsetInput" Width="116" Tag="十六进制偏移" KeyDown="FileOffsetKeyDown"
+                         AutomationProperties.Name="十六进制偏移"/>
+                <Button Content="跳转" Click="GoToFileOffset" Margin="6,0,0,0"/>
+                <Button x:Name="NextFileHexButton" Style="{StaticResource NextItemButton}" ToolTip="下一个字节区间" AutomationProperties.Name="下一个字节区间"
+                        Click="NextFileHex" Margin="6,0,0,0"/>
+              </StackPanel>
+            </Border>
+          </Grid>
         <Grid x:Name="TablesPanel" IsEnabled="False">
           <Grid.ColumnDefinitions>
             <ColumnDefinition x:Name="TableTreeColumn" Width="196"/>
             <ColumnDefinition x:Name="TableTreeDivider" Width="8"/>
             <ColumnDefinition Width="*"/>
           </Grid.ColumnDefinitions>
-          <DockPanel x:Name="TableTreePanel">
-            <TextBox x:Name="TableSearch" Style="{StaticResource SearchTextBox}" DockPanel.Dock="Top" Tag="搜索表名…" ToolTip="搜索表名"
+          <Grid x:Name="TableTreePanel">
+            <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto" SharedSizeGroup="BrowserFooter"/></Grid.RowDefinitions>
+            <TextBox x:Name="TableSearch" Style="{StaticResource SearchTextBox}" Tag="搜索表名…" ToolTip="搜索表名"
                      TextChanged="FilterTables" Margin="0,0,0,6"/>
-            <TextBlock x:Name="TableCount" DockPanel.Dock="Bottom" Foreground="{StaticResource Muted}" Margin="0,6,0,0"/>
-            <TreeView x:Name="TablesList" Style="{StaticResource PathTreeView}" ItemTemplate="{StaticResource PathTreeLabel}"
+            <TextBlock x:Name="TableCount" Grid.Row="2" Foreground="{StaticResource Muted}" Margin="0,6,0,0"/>
+            <TreeView x:Name="TablesList" Grid.Row="1" Style="{StaticResource PathTreeView}" ItemTemplate="{StaticResource PathTreeLabel}"
                       SelectedItemChanged="TableSelected" PreviewMouseRightButtonDown="CopyLocalTableName" PreviewMouseLeftButtonDown="ClickLocalTable"/>
-          </DockPanel>
+          </Grid>
           <Grid Grid.Column="2">
             <Grid.RowDefinitions>
               <RowDefinition Height="Auto"/>
-              <RowDefinition Height="Auto"/>
               <RowDefinition Height="*"/>
               <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto" SharedSizeGroup="BrowserFooter"/>
             </Grid.RowDefinitions>
-            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"><StackPanel x:Name="LocalTableTabStrip" Orientation="Horizontal"/></ScrollViewer>
-            <DockPanel Grid.Row="1" x:Name="TableToolbar" Margin="0,4,0,6">
-              <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
-                <Button x:Name="TableModeButton" Content="切换至 Raw" Click="ToggleTableMode"/>
-                <Button Content="导入定义…" Click="ImportTableDefinitions" ToolTip="导入 SaintCoinach 定义目录"/>
-                <Button x:Name="ReloadRowsButton" Content="重新读取" Click="ReloadRows" IsEnabled="False"/>
-                <Button x:Name="ClearTableFiltersButton" Content="清除筛选" Click="ClearTableFilters" IsEnabled="False"/>
-                <Button x:Name="FitTableColumnsButton" Content="重置列宽" Click="ResetTableColumnSizing" IsEnabled="False" Margin="0"
-                        ToolTip="按当前视图的表头和单元格最大宽度重置"/>
-              </StackPanel>
-              <TextBlock x:Name="TableInfo" Text="选择一张表查看完整内容" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
-            </DockPanel>
-            <DataGrid Grid.Row="2" x:Name="TableGrid" SelectionUnit="Cell" CanUserSortColumns="False" IsVisibleChanged="TableGridVisibilityChanged"
-                      RowHeaderWidth="0" RowHeaderStyle="{StaticResource HiddenTableRowHeader}"
-                      CanUserReorderColumns="False" PreviewMouseLeftButtonUp="TableCellClicked" PreviewKeyDown="TableGridKeyDown"
-                      ScrollViewer.ScrollChanged="TableGridScrolled" LostMouseCapture="TableGridLostMouseCapture"/>
+            <StackPanel>
+              <ContentControl x:Name="InlineTableTabs" HorizontalContentAlignment="Stretch" IsTabStop="False">
+                <ScrollViewer x:Name="TableTabsScroll" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"><StackPanel x:Name="LocalTableTabStrip" Orientation="Horizontal"/></ScrollViewer>
+              </ContentControl>
+              <ContentControl x:Name="InlineTableToolbar" HorizontalContentAlignment="Stretch" IsTabStop="False"/>
+            </StackPanel>
+            <ContentControl Grid.Row="2" x:Name="FooterTableToolbar" HorizontalContentAlignment="Stretch" IsTabStop="False">
+              <DockPanel x:Name="TableToolbar" Margin="0,6,0,0">
+                <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
+                  <Button x:Name="TableModeButton" Content="切换至 Raw" Click="ToggleTableMode"/>
+                  <Button Content="导入定义…" Click="ImportTableDefinitions" ToolTip="导入 SaintCoinach 定义目录"/>
+                  <Button x:Name="ReloadRowsButton" Content="重新读取" Click="ReloadRows" IsEnabled="False"/>
+                  <Button x:Name="ClearTableFiltersButton" Content="清除筛选" Click="ClearTableFilters" IsEnabled="False"/>
+                  <Button x:Name="FitTableColumnsButton" Content="重置列宽" Click="ResetTableColumnSizing" IsEnabled="False" Margin="0"
+                          ToolTip="按当前视图的表头和单元格最大宽度重置"/>
+                </StackPanel>
+                <TextBlock x:Name="TableInfo" Text="选择一张表查看完整内容" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"/>
+              </DockPanel>
+            </ContentControl>
+            <Border x:Name="TableFrame" Grid.Row="1" Style="{StaticResource RoundedPreviewFrame}" Padding="0">
+              <DataGrid x:Name="TableGrid" BorderThickness="0" SelectionUnit="Cell" CanUserSortColumns="False" IsVisibleChanged="TableGridVisibilityChanged"
+                        RowBackground="{StaticResource WorkspaceSurface}" AlternatingRowBackground="#EAF0F8" AlternationCount="2"
+                        RowHeaderWidth="0" RowHeaderStyle="{StaticResource HiddenTableRowHeader}"
+                        CanUserReorderColumns="False" PreviewMouseLeftButtonUp="TableCellClicked" PreviewKeyDown="TableGridKeyDown"
+                        ScrollViewer.ScrollChanged="TableGridScrolled" LostMouseCapture="TableGridLostMouseCapture"/>
+            </Border>
+            <ContentControl Grid.Row="3" x:Name="TableStatusHost" IsTabStop="False" VerticalAlignment="Top" HorizontalContentAlignment="Stretch"/>
 
           </Grid>
           <Popup x:Name="TableFilterPopup" Placement="Bottom" StaysOpen="False" AllowsTransparency="True">
-            <Border Background="White" BorderBrush="#D0D7DE" BorderThickness="1" CornerRadius="6" Padding="12" Width="300">
+            <Border Background="{StaticResource WorkspaceSurface}" BorderBrush="{StaticResource Border}" BorderThickness="1" CornerRadius="6" Padding="12" Width="300">
               <StackPanel>
                 <TextBlock x:Name="TableFilterTitle" FontWeight="SemiBold" TextWrapping="Wrap" Margin="0,0,0,8"/>
                 <TextBox x:Name="TableFilterInput" Style="{StaticResource SearchTextBox}" Tag="输入关键词，Enter 应用" KeyDown="TableFilterKeyDown"/>
@@ -158,10 +190,10 @@
             </Border>
           </Popup>
           <Popup x:Name="CellPopup" Placement="Bottom" VerticalOffset="4" StaysOpen="True" AllowsTransparency="True">
-            <Border x:Name="TableCellContent" Background="White" BorderBrush="#D0D7DE" BorderThickness="1" CornerRadius="6" Padding="12" Width="500" PreviewKeyDown="CellPopupKeyDown">
+            <Border x:Name="TableCellContent" Background="{StaticResource WorkspaceSurface}" BorderBrush="{StaticResource Border}" BorderThickness="1" CornerRadius="6" Padding="12" Width="500" PreviewKeyDown="CellPopupKeyDown">
               <StackPanel>
                 <DockPanel Margin="0,0,0,8">
-                  <Button DockPanel.Dock="Right" Content="复制" Click="CopyCell" Padding="9,3" Margin="8,0,0,0"/>
+                  <Button DockPanel.Dock="Right" Style="{StaticResource CopyButton}" Content="复制单元格" Click="CopyCell" Margin="8,0,0,0"/>
                   <TextBlock x:Name="CellTitle" FontWeight="SemiBold" VerticalAlignment="Center" TextWrapping="Wrap"/>
                 </DockPanel>
                 <CheckBox x:Name="RawCellToggle" Content="显示原始值" Checked="ToggleRawCell" Unchecked="ToggleRawCell" Margin="0,0,0,6"/>
@@ -187,21 +219,19 @@
             <Grid.RowDefinitions>
               <RowDefinition Height="Auto"/>
               <RowDefinition Height="*"/>
-              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="Auto" SharedSizeGroup="BrowserFooter"/>
             </Grid.RowDefinitions>
             <TextBox x:Name="IconSearch" Style="{StaticResource SearchTextBox}" Tag="筛选路径或编号…" ToolTip="筛选图标路径或编号" TextChanged="FilterIcons" Margin="0,0,0,6"/>
+            <TextBlock x:Name="TextureTreeCount" Grid.Row="2" Text="尚未读取目录" Foreground="{StaticResource Muted}" Margin="0,6,0,0"
+                       TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
             <DockPanel Grid.Row="1">
-              <TextBlock x:Name="TextureTreeCount" Text="尚未读取目录" DockPanel.Dock="Bottom" Foreground="{StaticResource Muted}" Margin="0,6,0,0"/>
-              <TreeView x:Name="TextureTree" Style="{StaticResource PathTreeView}" ItemTemplate="{StaticResource PathTreeLabel}"
-                        SelectedItemChanged="TextureTreeSelected"/>
-            </DockPanel>
-            <Expander Grid.Row="2" x:Name="IconGallery" Header="目录缩略图" Margin="0,6,0,0"
+            <Expander DockPanel.Dock="Top" x:Name="IconGallery" Header="目录缩略图" Margin="0,0,0,6"
                       Expanded="IconGalleryExpanded" Collapsed="IconGalleryCollapsed">
               <DockPanel Margin="0,6,0,0">
                 <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" Margin="0,6,0,0">
-                  <Button x:Name="PreviousIconsButton" Content="‹ 上页" Click="PreviousIcons" IsEnabled="False"/>
+                  <Button x:Name="PreviousIconsButton" Style="{StaticResource PreviousItemButton}" Margin="0,0,8,0" ToolTip="上一页" AutomationProperties.Name="上一页" Click="PreviousIcons" IsEnabled="False"/>
                   <TextBlock x:Name="IconPageLabel" Text="选择一个目录" VerticalAlignment="Center" Margin="0,0,8,0"/>
-                  <Button x:Name="NextIconsButton" Content="下页 ›" Click="NextIcons" IsEnabled="False"/>
+                  <Button x:Name="NextIconsButton" Style="{StaticResource NextItemButton}" ToolTip="下一页" AutomationProperties.Name="下一页" Click="NextIcons" IsEnabled="False"/>
                 </StackPanel>
                 <ListBox x:Name="IconsList" Height="152" BorderBrush="#E4E7EC" ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                          SelectionChanged="IconSelected">
@@ -221,6 +251,9 @@
                 </ListBox>
               </DockPanel>
             </Expander>
+            <TreeView x:Name="TextureTree" Style="{StaticResource PathTreeView}" ItemTemplate="{StaticResource PathTreeLabel}"
+                      SelectedItemChanged="TextureTreeSelected"/>
+            </DockPanel>
           </Grid>
           <Grid Grid.Column="2">
             <Grid.RowDefinitions>
@@ -228,36 +261,40 @@
               <RowDefinition Height="*"/>
             </Grid.RowDefinitions>
             <DockPanel x:Name="LocalImagePathPanel" Margin="0,0,0,6">
-              <Button DockPanel.Dock="Right" Content="打开 .tex" Click="OpenTexture" Margin="6,0,0,0"/>
-              <TextBox x:Name="TexturePath" Tag="输入 SqPack 内的 .tex 路径…" ToolTip="SqPack 内的 .tex 路径"
+              <Button DockPanel.Dock="Right" Content="打开纹理" Click="OpenTexture" Margin="6,0,0,0"/>
+              <TextBox x:Name="TexturePath" Tag="输入 SqPack 内的 .tex 或 .atex 路径…" ToolTip="SqPack 内的 .tex 或 .atex 路径"
                        KeyDown="TexturePathKeyDown"/>
             </DockPanel>
             <local:TexturePreview x:Name="LocalTexturePreview" Grid.Row="1"/>
           </Grid>
         </Grid>
+    <local:IconBrowser x:Name="LocalIconBrowser" Visibility="Collapsed"/>
+    <local:UldBrowser x:Name="LocalUldBrowser" Visibility="Collapsed"/>
     <local:ModelPreview x:Name="LocalModelsPanel" Visibility="Collapsed" RelatedTableRequested="OpenModelSheet"/>
     <local:MapPreview x:Name="LocalMapsPanel" Visibility="Collapsed" RelatedTableRequested="OpenModelSheet"/>
     <local:AudioPreview x:Name="LocalAudioPanel" Visibility="Collapsed"/>
     <Grid x:Name="PatchModelsPanel" Visibility="Collapsed">
       <Grid.ColumnDefinitions><ColumnDefinition Width="310"/><ColumnDefinition Width="8"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-      <DockPanel>
-        <TextBox x:Name="PatchModelSearch" Style="{StaticResource SearchTextBox}" DockPanel.Dock="Top" Tag="筛选模型路径…" Margin="0,0,0,6"
+      <Grid>
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto" SharedSizeGroup="BrowserFooter"/></Grid.RowDefinitions>
+        <TextBox x:Name="PatchModelSearch" Style="{StaticResource SearchTextBox}" Tag="筛选模型路径…" Margin="0,0,0,6"
                  TextChanged="FilterPatchModels"/>
-        <TextBlock x:Name="PatchModelsSummary" DockPanel.Dock="Bottom" Style="{StaticResource PatchScanSummary}" Margin="0,6,0,0"/>
-        <TreeView x:Name="PatchModelsList" Style="{StaticResource PathTreeView}" ItemTemplate="{StaticResource PathTreeLabel}"
+        <TextBlock x:Name="PatchModelsSummary" Grid.Row="2" Style="{StaticResource PatchScanSummary}" Margin="0,6,0,0"/>
+        <TreeView x:Name="PatchModelsList" Grid.Row="1" Style="{StaticResource PathTreeView}" ItemTemplate="{StaticResource PathTreeLabel}"
                   SelectedItemChanged="PatchModelSelected"/>
-      </DockPanel>
+      </Grid>
       <local:ModelPreview Grid.Column="2" x:Name="PatchModelPreview" ShowBrowser="False"/>
     </Grid>
     <Grid x:Name="PatchAudioPanel" Visibility="Collapsed">
       <Grid.ColumnDefinitions><ColumnDefinition Width="310"/><ColumnDefinition Width="8"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-      <DockPanel>
-        <TextBox x:Name="PatchAudioSearch" Style="{StaticResource SearchTextBox}" DockPanel.Dock="Top" Tag="筛选音频路径…" Margin="0,0,0,6"
+      <Grid>
+        <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto" SharedSizeGroup="BrowserFooter"/></Grid.RowDefinitions>
+        <TextBox x:Name="PatchAudioSearch" Style="{StaticResource SearchTextBox}" Tag="筛选音频路径…" Margin="0,0,0,6"
                  TextChanged="FilterPatchAudio"/>
-        <TextBlock x:Name="PatchAudioSummary" DockPanel.Dock="Bottom" Style="{StaticResource PatchScanSummary}" Margin="0,6,0,0"/>
-        <TreeView x:Name="PatchAudioList" Style="{StaticResource PathTreeView}" ItemTemplate="{StaticResource PathTreeLabel}"
-                  SelectedItemChanged="PatchAudioSelected"/>
-      </DockPanel>
+        <TextBlock x:Name="PatchAudioSummary" Grid.Row="2" Style="{StaticResource PatchScanSummary}" Margin="0,6,0,0"/>
+        <TreeView x:Name="PatchAudioList" Grid.Row="1" Style="{StaticResource PathTreeView}" ItemTemplate="{StaticResource PathTreeLabel}"
+                  SelectedItemChanged="PatchAudioSelected" PreviewMouseLeftButtonDown="PlayPatchAudioFile"/>
+      </Grid>
       <local:AudioPreview Grid.Column="2" x:Name="PatchAudioPreview" ShowBrowser="False"/>
     </Grid>
     <Grid x:Name="PatchImagesPanel" Visibility="Collapsed">
@@ -267,16 +304,17 @@
           <ColumnDefinition Width="8"/>
           <ColumnDefinition Width="*"/>
         </Grid.ColumnDefinitions>
-        <DockPanel>
-          <TextBox x:Name="PatchImageSearch" Style="{StaticResource SearchTextBox}" DockPanel.Dock="Top" Tag="筛选图片路径或变化依据…" ToolTip="筛选图片 Diff" Margin="0,0,0,6"
+        <Grid>
+          <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto" SharedSizeGroup="BrowserFooter"/></Grid.RowDefinitions>
+          <TextBox x:Name="PatchImageSearch" Style="{StaticResource SearchTextBox}" Tag="筛选图片路径或变化依据…" ToolTip="筛选图片 Diff" Margin="0,0,0,6"
                    TextChanged="FilterPatchImages"/>
-          <StackPanel DockPanel.Dock="Bottom" Margin="0,6,0,0">
+          <StackPanel Grid.Row="2" Margin="0,6,0,0">
             <TextBlock x:Name="PatchImageCount" Foreground="{StaticResource Muted}"/>
             <TextBlock x:Name="PatchSummary" Style="{StaticResource PatchScanSummary}"/>
           </StackPanel>
-          <TreeView x:Name="PatchImagesList" Style="{StaticResource PathTreeView}" ItemTemplate="{StaticResource PatchPathTreeLabel}"
+          <TreeView x:Name="PatchImagesList" Grid.Row="1" Style="{StaticResource PathTreeView}" ItemTemplate="{StaticResource PatchPathTreeLabel}"
                     SelectedItemChanged="PatchImageSelected"/>
-        </DockPanel>
+        </Grid>
         <Grid Grid.Column="2">
           <Grid.RowDefinitions>
             <RowDefinition Height="Auto"/>
@@ -290,12 +328,14 @@
         </Grid>
       </Grid>
     </Grid>
-    <DockPanel Grid.Row="1" x:Name="BrowserStatusBar" Margin="0,8,0,0">
+    <ContentControl Grid.Row="1" x:Name="PageStatusHost" IsTabStop="False" HorizontalContentAlignment="Stretch">
+    <DockPanel x:Name="BrowserStatusBar" Margin="0,6,0,0">
       <Button x:Name="CancelBrowserButton" DockPanel.Dock="Right" Content="取消" Click="CancelBrowser"
               Visibility="Collapsed" Padding="10,3" Margin="8,0,0,0"/>
       <ProgressBar x:Name="BrowserProgress" DockPanel.Dock="Right" Width="110" Height="4" IsIndeterminate="True" Visibility="Collapsed"/>
       <TextBlock x:Name="BrowserStatus" Foreground="{StaticResource Muted}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
                  ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
     </DockPanel>
+    </ContentControl>
   </Grid>
 </UserControl>

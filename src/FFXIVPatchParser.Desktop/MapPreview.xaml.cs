@@ -21,7 +21,9 @@ public partial class MapPreview : UserControl
     private readonly Model3DGroup visibleScene = new();
     private int opaqueSceneGroups;
     private readonly PreviewCameraController camera;
-    private PreviewCameraController.ViewState? suspendedCamera;
+    private readonly Dictionary<(uint TerritoryId, string ScenePath), PreviewCameraController.ViewState> mapCameraViews = [];
+    private (uint TerritoryId, string ScenePath)? displayedCameraMap;
+    private LocalGameSource? cameraSessionSource;
     private Rect3D sceneBounds = Rect3D.Empty;
     private Rect3D terrainBounds = Rect3D.Empty;
 
@@ -33,6 +35,9 @@ public partial class MapPreview : UserControl
     }
 
     public event EventHandler<ModelTableLinkEventArgs>? RelatedTableRequested;
+
+    internal bool HasFilePreview => (MapSurface.IsVisible && !sceneBounds.IsEmpty)
+        || (MapImage.IsVisible && previewComplete);
 
     internal void ShowMapBrowser(bool visible)
     {
@@ -52,7 +57,6 @@ public partial class MapPreview : UserControl
         if (changed)
         {
             selectedMap = entry;
-            suspendedCamera = null;
             ShowMapInfo(entry);
         }
         updatingList = true;
@@ -74,13 +78,14 @@ public partial class MapPreview : UserControl
         source = game;
         maps = null;
         selectedMap = null;
-        suspendedCamera = null;
         scenes.Clear();
         MapList.ItemsSource = null;
         MapCount.Text = "";
         MapName.Text = "区域信息";
+        MapSummary.ItemsSource = null;
+        MapContentLink.Content = null;
+        MapContentLink.Visibility = Visibility.Collapsed;
         MapFields.ItemsSource = null;
-        MapLinks.Children.Clear();
         StartPositionControls.Visibility = Visibility.Collapsed;
         ImageMode.IsEnabled = false;
         SceneMode.IsChecked = true;
@@ -180,7 +185,6 @@ public partial class MapPreview : UserControl
     {
         if (updatingList || MapList.SelectedItem is not NamedMapEntry entry || selectedMap == entry) return;
         selectedMap = entry;
-        suspendedCamera = null;
         ShowMapInfo(entry);
         ImageMode.IsEnabled = entry.MapTexturePath != null;
         if (!ImageMode.IsEnabled && ImageMode.IsChecked == true) SceneMode.IsChecked = true;
@@ -190,41 +194,44 @@ public partial class MapPreview : UserControl
     private void ShowMapInfo(NamedMapEntry entry)
     {
         MapName.Text = entry.Name;
+        MapSummary.ItemsSource = new MapField[]
+        {
+            new("区域 ID", entry.TerritoryId == 0 ? "—" : entry.TerritoryId.ToString(), entry.TerritoryId == 0 ? null : "TerritoryType", entry.TerritoryId),
+            new("地图 ID", entry.MapId == 0 ? "—" : entry.MapId.ToString(), entry.MapId == 0 ? null : "Map", entry.MapId),
+            new("区域用途", entry.IntendedUse.Length == 0 ? "—" : entry.IntendedUse,
+                entry.TerritoryId == 0 ? null : "TerritoryIntendedUse", entry.IntendedUseId)
+        };
+        MapContentLink.Content = new MapField("副本／任务", entry.ContentName, entry.ContentSheet, entry.ContentRowId);
+        MapContentLink.Visibility = entry.ContentName.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+        MapContentLink.IsEnabled = entry.ContentSheet != null;
         var fields = new List<MapField>();
-        if (entry.TerritoryId != 0) fields.Add(new("区域 ID", entry.TerritoryId.ToString()));
-        if (entry.MapId > 0) fields.Add(new("地图 ID", entry.MapId.ToString()));
         if (entry.Zone.Length > 0 && entry.Zone != entry.Name) fields.Add(new("区域", entry.Zone));
         if (entry.Region.Length > 0 && entry.Region != entry.Zone && entry.Region != entry.Name) fields.Add(new("地域", entry.Region));
-        if (entry.ContentName.Length > 0) fields.Add(new("副本／任务", entry.ContentName));
-        if (entry.IntendedUse.Length > 0) fields.Add(new("区域用途", $"{entry.IntendedUse} · {entry.IntendedUseId}"));
         if (entry.MapCode.Length > 0) fields.Add(new("地图代号", entry.MapCode));
         fields.Add(new("场景路径", entry.ScenePath));
         if (entry.MapTexturePath is { } texture) fields.Add(new("地图纹理", texture));
         MapFields.ItemsSource = fields;
-        MapLinks.Children.Clear();
-        if (entry.TerritoryId != 0) AddMapLink("TerritoryType", entry.TerritoryId);
-        if (entry.MapId > 0) AddMapLink("Map", entry.MapId);
-        if (entry.PlaceNameId > 0) AddMapLink("PlaceName", entry.PlaceNameId);
         ShowStartPosition(entry.TerritoryId);
     }
 
-    private void AddMapLink(string sheet, uint id)
+    private void OpenMapField(object sender, RoutedEventArgs e)
     {
-        var button = new Button { Content = $"{sheet} #{id}", Margin = new Thickness(0, 0, 5, 5), Padding = new Thickness(6, 3, 6, 3) };
-        button.Click += (_, _) => RelatedTableRequested?.Invoke(this, new ModelTableLinkEventArgs(sheet, id));
-        MapLinks.Children.Add(button);
+        if (sender is Button { Content: MapField { Sheet: { } sheet } field })
+            RelatedTableRequested?.Invoke(this, new ModelTableLinkEventArgs(sheet, field.RowId));
     }
 
     private void ChangeMode(object sender, RoutedEventArgs e)
     {
         if (MapSurface == null || MapImage == null) return;
-        if (ImageMode.IsChecked == true && MapSurface.Visibility == Visibility.Visible && !sceneBounds.IsEmpty)
-            suspendedCamera = camera.CaptureView();
         StartPreview();
     }
 
     private void ClearPreview()
     {
+        RememberMapCamera();
+        ClearEnvironment();
+        MapEffectControls.Visibility = Visibility.Collapsed;
+        MapEffectChoice.ItemsSource = null;
         previewComplete = false;
         displayedPath = null;
         visibleScene.Children.Clear();
@@ -241,6 +248,22 @@ public partial class MapPreview : UserControl
         MapStatus.Text = "";
         MapStatus.ToolTip = null;
         CancelButton.Visibility = RetryButton.Visibility = Visibility.Collapsed;
+    }
+
+    private static (uint TerritoryId, string ScenePath) CameraMapKey(NamedMapEntry entry)
+        => (entry.TerritoryId, entry.ScenePath.Replace('\\', '/').ToLowerInvariant());
+
+    private void RememberMapCamera()
+    {
+        // 镜头归属于实际显示的场景；此时 selectedMap 可能已经切到下一个区域。
+        if (cameraSessionSource != source)
+        {
+            mapCameraViews.Clear();
+            cameraSessionSource = source;
+        }
+        else if (displayedCameraMap is { } key && !sceneBounds.IsEmpty)
+            mapCameraViews[key] = camera.CaptureView();
+        displayedCameraMap = null;
     }
 
     private void StartPreview()
@@ -323,7 +346,11 @@ public partial class MapPreview : UserControl
         else StartPreview();
     }
 
-    private sealed record MapField(string Label, string Value);
+    private sealed record MapField(string Label, string Value, string? Sheet = null, uint RowId = 0)
+    {
+        public bool HasLink => Sheet != null;
+        public string Tooltip => Sheet == null ? $"{Label} {Value}" : $"{Label} {Value} · 打开 {Sheet} #{RowId}";
+    }
     private sealed record CachedScene(string Path, Model3D[] Groups, Rect3D Bounds, Rect3D TerrainBounds,
         Point3D? Entrance, string Summary, string? Warning);
 }

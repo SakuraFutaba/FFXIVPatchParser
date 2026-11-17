@@ -1,0 +1,11 @@
+{
+  "sheet": "ContentFinderCondition",
+  "schemaHash": "B4B8973D4495616E829A32C58693CBE88B658013E062C679AD17A0220EC5603A",
+  "definitions": [
+    {
+      "index": 43,
+      "name": "Name"
+    }
+  ],
+  "defaultColumn": "Name"
+}

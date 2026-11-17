@@ -21,9 +21,21 @@
 
 图标查找按千位分目录，例如编号 1234 对应 `ui/icon/001000/001234.tex`。本地图标目录还会检查 `_hr1.tex` 高分辨率后缀和 `chs/` 本地化目录。用这些已知路径补充索引中的名字后，其他 UI 纹理仍可通过合成地址打开。 [图标和 UI 索引](../src/FFXIVPatchParser/LocalGameSource.cs)
 
-本地图片页默认从索引读取已知图标路径，先按目录哈希跳过不存在的编号段。点击「扫描资源索引」才读取 UI 数据容器的资源头，并在目录中追加路径未识别的纹理。国服 7.58 实测默认读出 140,859 条路径，已知目录阶段约 0.63 至 0.94 秒。额外的容器扫描约 1.60 至 2.21 秒，找到 64,237 条路径未识别的纹理。两轮计时均在游戏源已初始化后进行，沿用系统文件缓存。 [图片目录加载](../src/FFXIVPatchParser.Desktop/SqPackBrowser.Images.cs)
+本地图片页进入后自动按当前索引匹配已知 `.tex` 和 `.atex` 路径，覆盖 UI、角色、场景与特效等类别；目录默认展开 `ui/icon`。音频页同样自动列出已知 `.scd` 路径，默认展开 `music`。名称来自文件系统已有路径清单及当前构建的已验证缓存，目录筛选不逐个读取未知资源的 DAT 文件头。未命名资源仍在 SqPack 文件页按地址访问。目录后台按需加载，切换游戏源时重建，导入路径后再次进入页面会检查目录版本。 [媒体目录](../src/FFXIVPatchParser/LocalGameSource.LocalMediaCatalog.cs) · [图片目录加载](../src/FFXIVPatchParser.Desktop/SqPackBrowser.Images.cs)
+
+历史图标专用目录在国服 7.58 读出 140,859 条路径，约 0.63 至 0.94 秒；这些数字仅描述旧版图标目录，不代表当前全类别目录的数量或耗时。
+
+「图标浏览器」按可用 ID 去重。参考 Dalamud 的游戏图标查找顺序，国服浏览器先试无语言高清，再按顺序试简中高清、简中普通、无语言普通。列表只解码可见区域和少量预取项。缩略图保持长宽比，悬停显示 ID 和原图，单击进入图片页。国服简体构建 `2026.11.03.0000.0000` 的 WPF 探针从 140,859 条变体路径合并出 70,441 个 ID；测试用 128 × 64 图片缩成 64 × 32。 [Dalamud 图标浏览源码](https://github.com/goatcorp/Dalamud/blob/43b34118bcf7213e575ec39517d033191b1acf17/Dalamud/Interface/Internal/Windows/Data/Widgets/IconBrowserWidget.cs) · [Dalamud 图标查找顺序](https://github.com/goatcorp/Dalamud/blob/43b34118bcf7213e575ec39517d033191b1acf17/Dalamud/Interface/Textures/Internal/TextureManager.GamePath.cs)
+
+国服简体 7.58、构建 `2026.11.03.0000.0000`，使用已有路径及已验证缓存的本项目实测：图片 634,165 条（含场景、角色、UI、特效），模型 186,170 条，音频 110,097 条。独立进程按图片→模型→音频顺序调用目录 API，耗时分别为 16.00、1.38、0.51 秒，再次读取图片约 2.91 秒。首次图片读取包含共享索引和名称缓存初始化；后续两项复用了缓存。上述数字仅覆盖该缓存样本，未计入 WPF 目录树构造与绘制。检查模型与音频完整扫描缓存仍为空，预先取消的调用抛出取消异常；此验证不代表未知资源已有完整类型分类。
 
 TEX 解码后可按原始尺寸导出 PNG，保留透明通道。预览的缩放和棋盘背景只影响显示。离屏验证使用四个 BGRA 像素，往返 PNG 后 Alpha 0、128、255 都保持原值。 [PNG 导出与预览](../src/FFXIVPatchParser.Desktop/TexturePreview.xaml.cs)
+
+### ATEX 特效贴图
+
+在国服简体 `2026.11.03.0000.0000` 的文件系统中打开 `vfx/action/ab_2ast003/texture/app_grd_1h.atex`，也可在图片页直接输入该路径。这个样本在 SqPack 中用 Standard（类型 2）封装，解包后的纹理头与 TEX 结构兼容。实测首级纹理是 64 × 128 的 BC1（DXT1），格式值 `0x3420`，首级数据偏移 `0x50`。按路径和索引地址读取的像素一致，导出 PNG 后重新读取也得到相同的 BGRA 像素。 [Lumina 纹理头](https://github.com/NotAdam/Lumina/blob/master/src/Lumina/Data/Files/TexFile.cs) · [本地纹理解包](../src/FFXIVPatchParser/LocalGameSource.cs)
+
+本地图片页自动从已补全的路径中加入 ATEX。Patch 的图片页按写入区间筛选有路径的 ATEX，使用样本的实际容器位置构造写入区间后，自动和完整扫描均命中。真实 `0.0.0.30 → 0.0.0.31` 补丁样本的两次扫描都得到 15 张 UI TEX，ATEX 命中数为 0。 [补丁媒体索引筛选](../src/FFXIVPatchParser/LocalGameSource.KnownMedia.cs)
 
 ## Channeling 表与连线特效
 
@@ -45,11 +57,29 @@ MDL 提供网格，外观和动作还依赖 IMC、材质、纹理、骨架及 PA
 
 SCD 是音频容器，可能含多条音轨。程序按轨道读取编码，提取 Ogg Vorbis 或 MP3，或为 MS ADPCM 构造 WAV。实测样本覆盖 Ogg Vorbis 和 MS ADPCM。 [音轨读取](../src/FFXIVPatchParser/LocalGameSource.Audio.cs) · [Lumina ScdFile](https://github.com/NotAdam/Lumina/blob/8802d66a3cb3032be2fcf998bb10e864221bdb13/src/Lumina/Data/Files/ScdFile.cs)
 
-本地音频页默认读取 BGM 表提供且在当前索引中存在的路径。选择目录树中的文件可读取音轨。点击「扫描资源索引」会检查 `cut`、`sound`、`music` 三类容器，并将匿名地址按容器组织。国服 7.58 简体中文客户端实测已知目录共 1,287 条路径，扫描上述三类的全部容器后共 102,427 条去重路径。目录筛选、选择读取、取消扫描保留原目录均通过离屏验证。 [音频目录界面](../src/FFXIVPatchParser.Desktop/AudioPreview.xaml.cs)
+本地音频页自动按已知 `.scd` 路径建立目录，并保留 BGM 曲名显示。选择目录树中的文件后才读取音轨。历史 BGM 专用目录在国服 7.58 简体中文客户端包含 1,287 条路径；旧版手动扫描 `cut`、`sound`、`music` 三类容器得到 102,427 条去重路径，其中包括匿名地址。这些数量不代表当前已知路径目录的覆盖范围。 [音频目录界面](../src/FFXIVPatchParser.Desktop/AudioPreview.xaml.cs)
 
 音频合成地址按容器、偏移和索引哈希直接校验后读取，不需要先扫描容器。此前匿名地址依赖扫描缓存；若同一哈希已解析成已知路径，扫描缓存中只保留已知路径，匿名地址便无法打开。实测用标题曲 `music/ex2/bgm_ex2_system_title.scd` 的合成地址在新建数据源中读取，内容与逻辑路径完全一致，且没有填充容器扫描缓存；错误偏移和空哈希地址被拒绝。 [音频地址解析](../src/FFXIVPatchParser/LocalGameSource.Audio.cs)
 
-Windows 解码失败时，桌面端可调用已有 FFmpeg 转 PCM。回退试听最长五分钟，导出保留完整音轨。国服 7.58 离屏 WPF 验证中，标题曲 Ogg 与一条匿名 ADPCM 均经 FFmpeg 回退成功打开，播放器返回的时长分别约 62.18 秒和 1.57 秒；隐藏预览会释放播放器。此验证将播放器静音，只确认解码和播放器状态，不代表已验证扬声器输出。
+Windows 解码失败时，桌面端可调用已有 FFmpeg 转 PCM。转码保留完整时长和采样率，切换歌曲或退出可取消转码。国服 7.58 实测 `music/ex4/bgm_ex4_wks_01.scd` 转码后为 318.898 秒。
+
+Vorbis 的 `LOOPSTART`、`LOOPEND` 来自 Ogg 注释，单位是每声道的采样帧。SCD 音轨头中的 Ogg 循环值是字节位置。PCM 16-bit 和 MS ADPCM 使用 SCD 音轨头的循环字节位置，按声道对齐或 ADPCM 块换算为采样帧。单曲循环先播放前奏，随后反复缓冲 `[LOOPSTART, LOOPEND)` 内的 PCM。PCM 可直接使用循环队列，压缩音轨需要 PATH 中的 FFmpeg；缺少循环点或 FFmpeg 时使用整轨重复。 [vgmstream 的 SCD 实现](https://github.com/vgmstream/vgmstream/blob/master/src/meta/sqex_scd.c)
+
+国服构建 `2026.11.03.0000.0000` 的 `music/ex2/bgm_ex2_system_title.scd` 有 44,100 Hz 采样率，循环点为 1,065,385 至 2,742,057。桌面验证中，从循环终点前定位后，播放位置回到循环起点附近并继续推进。
+### 全局音乐播放与短音轨重播
+
+2026-11-16，国服简中 `2026.11.03.0000.0000` 样本的 `sqpack:ffxiv/070000.win32.dat0@30a8cd00#c2d4378e002f5cd4.scd` 含 14,230 字节的 MS ADPCM 音轨。WPF 使用 FFmpeg 回退为 PCM，时长约 0.585 秒。音轨自然结束后，下一次播放用新的 `MediaPlayer` 打开同一缓存。暂停和定位继续使用当前实例。离屏回归覆盖短音效和约 62.178 秒的 Ogg Vorbis 标题曲，包括结束后重播、暂停定位、停止后重播、来源切换和单曲循环。旧版本的二次播放失败在同机离屏测试中未能稳定复现，具体触发条件待确认。 [播放生命周期](../src/FFXIVPatchParser.Desktop/AudioPreview.xaml.cs)
+
+底部播放栏常驻，离开来源页后继续播放。来源页和底栏共用播放状态和进度。音频目录单击预览，双击文件或曲名可立即播放。列表图标在右侧打开队列、曲库和收藏浮窗，按 Esc 或点击浮窗外可关闭。随机播放在一轮内避免重复，上一首沿实际播放顺序返回。自然播放到队列末尾后，列表循环从头继续。单曲循环复用当前音轨。收藏按路径和音轨保存在 `tmp/music/favorites.json`。 [全局播放器](../src/FFXIVPatchParser.Desktop/GlobalMusicPlayer.xaml) · [播放顺序](../src/FFXIVPatchParser.Desktop/MusicPlaybackOrder.cs)
+
+### OrchestrionPlugin 的曲名和文件路径
+
+上游 `SongList.LoadMetadataSheet` 先取得游戏表 `BGM`，按 CSV 的 `ID` 找到对应 `BGM.RowId`，从该行 `File` 取 SCD 路径。`xiv_bgm_metadata.csv` 提供编号和时长。`LoadLangSheet` 再按相同 `ID` 从 `xiv_bgm_zh.csv` 等语言表取曲名、别名和场景。上游通常从社区表更新，失败时读取本地 CSV。 [OrchestrionPlugin 关联实现](https://github.com/perchbirdd/OrchestrionPlugin/blob/e1031563f03d0bd7ae833326e0ac9f05aa67a9bb/Orchestrion/Persistence/SongList.cs#L74-L135) · [中文曲名表](https://github.com/perchbirdd/OrchestrionPlugin/blob/e1031563f03d0bd7ae833326e0ac9f05aa67a9bb/Orchestrion/Data/xiv_bgm_zh.csv)
+
+本项目用同一编号关联本地 `BGM` 与离线曲名资料。实测国服 7.58 曲库含 1,287 个路径。比如 `BGM #428` 的 `File` 是 `music/ex2/bgm_ex2_system_title.scd`，中文资料记为「红莲序曲*」。在音频目录或本地曲库输入「红莲序曲」、`Prelude - Long March Home` 或 `Stormblood title screen` 都能找到。目录优先显示中文曲名，鼠标悬停可看实际路径。同一文件关联多个 BGM ID 时，这些编号和名称都参与搜索。标题和场景来自社区标注，进度条使用本地音轨的实际解码时长。 [本地 BGM 读取](../src/FFXIVPatchParser/LocalGameSource.Audio.cs) · [离线关联](../src/FFXIVPatchParser.Desktop/MusicMetadata.cs) · [MIT 许可证](../src/FFXIVPatchParser.Desktop/Data/Orchestrion-LICENSE.txt)
+
+2026-11-18 对照 OrchestrionPlugin 仓库发布的中文、日文和英文 CSV，与项目此前缓存的 CSV 逐条一致。用户提供的 Google 表与插件的在线来源相同，实时表本次连接超时。新版优先用本地 `Orchestrion.RowId → OrchestrionPath.RowId → File`，再用 BGM ID 对应的社区中文、日文、英文。两个表各自的行号空间独立，跨表按经过验证的 SCD 路径合并。国服 `Orchestrion #1` 的名称「雪风」可直接匹配 `music/ffxiv/orchestrion/bgm_orch_001.scd`。 [社区原始表](https://docs.google.com/spreadsheets/d/1s-xJjxqp6pwS7oewNy1aOQnr3gaJbewvIBbyYchZ6No/edit?gid=2053080530)
+
 
 ## 写入候选怎样筛选
 

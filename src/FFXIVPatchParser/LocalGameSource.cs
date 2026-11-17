@@ -19,7 +19,7 @@ public sealed partial class LocalGameSource : IDisposable
     private readonly object gate = new();
     private readonly HashSet<string> validated = new();
     private IReadOnlyList<string>? icons;
-    private IReadOnlyList<UiTextureLocation>? uiTextures;
+    private IReadOnlyList<SqPackImageLocation>? imageTextures;
     private readonly Dictionary<string, (SqPack Pack, long Offset)> textureAddresses = new();
     public string SqPackPath { get; }
     public IReadOnlyList<string> SheetNames { get; }
@@ -146,55 +146,78 @@ public sealed partial class LocalGameSource : IDisposable
             }
         }
     }
-    public IReadOnlyList<string> ListUiTextures(CancellationToken token = default) => EnumerateUiTextures(token).Select(t => t.Path).ToArray();
-    internal IReadOnlyList<UiTextureLocation> EnumerateUiTextures(CancellationToken token, IReadOnlySet<string>? containers = null,
+    internal static readonly string[] ImageCategories = ["ui", "vfx", "chara", "bg", "bgcommon", "common", "cut"];
+
+    public IReadOnlyList<string> ListUiTextures(CancellationToken token = default)
+    {
+        var containers = ListFileSystemContainers(token).Where(container => container.Category == "ui")
+            .Select(container => container.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return EnumerateImageTextures(token, containers).Select(texture => texture.Path).ToArray();
+    }
+
+    public IReadOnlyList<string> ListImageTextures(CancellationToken token = default) =>
+        EnumerateImageTextures(token).Select(texture => texture.Path).ToArray();
+
+    internal IReadOnlyList<SqPackImageLocation> EnumerateImageTextures(CancellationToken token, IReadOnlySet<string>? containers = null,
         Func<string, long, long, bool>? includeRange = null)
     {
         lock (gate)
         {
-            if (uiTextures != null) return uiTextures.Where(item =>
+            token.ThrowIfCancellationRequested();
+            if (imageTextures != null) return imageTextures.Where(item =>
                 (containers is null || containers.Contains(item.Container)) &&
                 (includeRange is null || includeRange(item.Container, item.Offset, item.End))).ToArray();
-            var knownNames = ListIcons(token).GroupBy(p => GameData.ParseFilePath(p)!.IndexHash).ToDictionary(g => g.Key, g => g.First());
-            var result = new List<UiTextureLocation>();
-            foreach (var repo in game.Repositories.Values)
+            var result = new List<SqPackImageLocation>();
+            foreach (var container in ListFileSystemContainers(token))
             {
-                if (!repo.Categories.TryGetValue(6, out var categories)) continue;
-                foreach (var category in categories)
+                if (!ImageCategories.Contains(container.Category) || (containers is not null && !containers.Contains(container.Id))) continue;
+                var entries = EnumerateFileSystemEntries(container.Id, token);
+                var pack = fileSystemPacks![container.Id].Pack;
+                using var stream = File.OpenRead(pack.FullName);
+                using var reader = new BinaryReader(stream);
+                var isUi = container.Category == "ui";
+                for (var next = 0; next < entries.Count;)
                 {
-                    var locations = new Dictionary<(byte, long), ulong>();
-                    foreach (var hash in category.IndexHashTableEntries?.Keys.AsEnumerable() ?? [])
-                        if (category.TryGetFileDatOffset(hash, out var dat, out var offset)) locations.TryAdd((dat, offset), hash);
-                    foreach (var group in locations.GroupBy(x => x.Key.Item1))
+                    token.ThrowIfCancellationRequested();
+                    var first = next++;
+                    var entry = entries[first];
+                    var offset = entry.Offset;
+                    while (next < entries.Count && entries[next].Offset == offset) next++;
+                    var end = next < entries.Count ? entries[next].Offset : stream.Length;
+                    if (includeRange is not null && !includeRange(container.Id, offset, end)) continue;
+
+                    string? name = null;
+                    var ambiguous = false;
+                    for (var i = first; i < next; i++)
                     {
-                        var pack = category.GetDat(group.Key) ?? throw new FileNotFoundException("缺少SqPack容器。");
-                        var container = Path.GetRelativePath(SqPackPath, pack.FullName).Replace('\\', '/');
-                        if (containers is not null && !containers.Contains(container)) continue;
-                        using var stream = File.OpenRead(pack.FullName);
-                        using var reader = new BinaryReader(stream);
-                        var ordered = group.OrderBy(x => x.Key.Item2).ToArray();
-                        for (var i = 0; i < ordered.Length; i++)
-                        {
-                            token.ThrowIfCancellationRequested();
-                            var offset = ordered[i].Key.Item2;
-                            if (offset < 0 || offset > stream.Length - 24) throw new InvalidDataException("SqPack索引偏移越界。");
-                            var end = i + 1 < ordered.Length ? ordered[i + 1].Key.Item2 : stream.Length;
-                            if (includeRange is not null && !includeRange(container, offset, end)) continue;
-                            stream.Position = offset + 4;
-                            if (reader.ReadUInt32() != 4) continue;
-                            var path = knownNames.GetValueOrDefault(ordered[i].Value) ?? $"sqpack:{container}@{offset:X}#{ordered[i].Value:X16}";
-                            textureAddresses[path] = (pack, offset);
-                            result.Add(new(path, container, offset, end));
-                        }
+                        var known = entries[i].KnownPath;
+                        if (known is null) continue;
+                        if (!IsAtexPath(known) && !(isUi && known.EndsWith(".tex", StringComparison.OrdinalIgnoreCase))) continue;
+                        if (name is not null && name != known) ambiguous = true;
+                        name = known;
                     }
+
+                    // 标准文件通过已确认的 .atex 路径识别。UI 中的 Texture 条目也支持按地址预览。
+                    if (!isUi && name is null) continue;
+                    stream.Position = offset + 4;
+                    var type = reader.ReadUInt32();
+                    if (!IsImageTexture(type, name)) continue;
+                    var path = ambiguous ? entry.Locator : name ?? entry.Locator;
+                    textureAddresses[path] = (pack, offset);
+                    result.Add(new(path, container.Id, offset, end));
                 }
             }
-            if (containers is null && includeRange is null) uiTextures = result;
+            if (containers is null && includeRange is null) imageTextures = result;
             return result;
         }
     }
+
+    private static bool IsAtexPath(string path) => path.EndsWith(".atex", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsImageTexture(uint type, string? path) => type == 4 || (type == 2 && path is not null && IsAtexPath(path));
+
     public void Dispose() { lock (gate) game.Dispose(); }
 }
 
-internal sealed record UiTextureLocation(string Path, string Container, long Offset, long End);
+internal sealed record SqPackImageLocation(string Path, string Container, long Offset, long End);
 

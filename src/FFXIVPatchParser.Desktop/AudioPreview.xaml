@@ -10,25 +10,38 @@
   </UserControl.Resources>
   <Grid>
     <Grid.ColumnDefinitions><ColumnDefinition x:Name="BrowserColumn" Width="318"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-    <DockPanel x:Name="Browser" Margin="0,0,8,0">
-      <TextBox x:Name="AudioSearch" Style="{StaticResource SearchTextBox}" DockPanel.Dock="Top" Tag="筛选音频路径…" Margin="0,0,0,6" TextChanged="FilterAudio"
+    <Grid x:Name="Browser" Margin="0,0,8,0">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="*"/>
+        <RowDefinition Height="Auto" SharedSizeGroup="BrowserFooter"/>
+      </Grid.RowDefinitions>
+      <TextBox x:Name="AudioSearch" Style="{StaticResource SearchTextBox}" Tag="筛选音频路径…" Margin="0,0,0,6" TextChanged="FilterAudio"
                AutomationProperties.Name="筛选音频路径" ToolTip="筛选目录和文件名"/>
-      <TextBlock x:Name="CatalogStatus" DockPanel.Dock="Bottom" TextWrapping="Wrap" Foreground="{StaticResource Muted}" Margin="0,6,0,0"/>
-      <TreeView x:Name="AudioTree" Style="{StaticResource CompactPathTree}" SelectedItemChanged="SelectAudio" ItemTemplate="{StaticResource AudioTreeLabel}"/>
-    </DockPanel>
-    <DockPanel Grid.Column="1">
-      <DockPanel x:Name="PathInput" DockPanel.Dock="Top" Margin="0,0,0,6">
+      <TextBlock x:Name="CatalogStatus" Grid.Row="2" Foreground="{StaticResource Muted}" Margin="0,6,0,0"
+                 TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+      <TreeView Grid.Row="1" x:Name="AudioTree" Style="{StaticResource CompactPathTree}" SelectedItemChanged="SelectAudio"
+                PreviewMouseLeftButtonDown="PlayAudioFile" ItemTemplate="{StaticResource AudioTreeLabel}"/>
+    </Grid>
+    <Grid Grid.Column="1">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="*"/>
+        <RowDefinition Height="Auto" SharedSizeGroup="BrowserFooter"/>
+      </Grid.RowDefinitions>
+      <DockPanel x:Name="PathInput" Margin="0,0,0,6">
         <Button DockPanel.Dock="Right" Content="打开 .scd" Click="OpenEnteredPath" Margin="6,0,0,0"/>
         <TextBox x:Name="AudioPath" Tag="输入 SqPack 内的 .scd 路径…" KeyDown="EnterPath" AutomationProperties.Name="SqPack 音频路径"/>
       </DockPanel>
-      <Border VerticalAlignment="Top" Background="White" BorderBrush="#E4E7EC" BorderThickness="1" CornerRadius="6" Padding="12">
+      <Border Grid.Row="1" VerticalAlignment="Top" Background="{StaticResource WorkspaceSurface}" BorderBrush="{StaticResource Border}"
+              BorderThickness="1" CornerRadius="6" Padding="12">
     <StackPanel>
       <TextBlock x:Name="AudioDetails" Text="选择 .scd 文件以预览" TextWrapping="Wrap" Margin="0,0,0,8"/>
       <WrapPanel Margin="0,0,0,6">
         <local:PlayPauseButton x:Name="PlayButton" Style="{StaticResource MediaPlaybackButton}" Click="PlayAudio" IsEnabled="False"/>
         <Button x:Name="StopButton" Style="{StaticResource StopPlaybackButton}" Click="StopAudio" IsEnabled="False"/>
-        <Button x:Name="SaveButton" Content="导出音轨" Click="SaveAudio" IsEnabled="False"/>
-        <ComboBox x:Name="TrackSelector" MinWidth="86" IsEnabled="False" SelectionChanged="SelectTrack"
+        <Button x:Name="SaveButton" Content="导出音轨" Click="SaveAudio" IsEnabled="False" Width="38" Style="{StaticResource ExportButton}"/>
+        <ComboBox x:Name="TrackSelector" MinWidth="110" Height="30" IsEnabled="False" SelectionChanged="SelectTrack"
                   AutomationProperties.Name="音轨"/>
       </WrapPanel>
       <DockPanel>
@@ -39,6 +52,6 @@
       <TextBlock x:Name="Status" TextWrapping="Wrap" Foreground="#667085" Margin="0,6,0,0"/>
     </StackPanel>
       </Border>
-    </DockPanel>
+    </Grid>
   </Grid>
 </UserControl>

@@ -16,8 +16,9 @@ public static class PatchImageScanner
         CancellationToken token = default, IProgress<string>? progress = null)
     {
         var skipped = new List<string>();
-        var ranges = PatchMediaScanner.ReadRanges(source, patch, archivePaths, ["ui"], token, progress, verifyContainers: false, skippedContainers: skipped);
-        if (ranges.Count == 0 && skipped.Count == 0) return new([], "本补丁没有 UI 数据容器更改。");
+        var ranges = PatchMediaScanner.ReadRanges(source, patch, archivePaths, LocalGameSource.ImageCategories, token, progress,
+            verifyContainers: false, skippedContainers: skipped);
+        if (ranges.Count == 0 && skipped.Count == 0) return new([], "本补丁没有图片相关数据容器更改。");
         var entries = source.ListKnownMediaLocations("image", ranges, token)
             .Select(item => new PatchImageEntry(item.Path, item.Container, item.Offset, PatchMediaScanner.KnownPathEvidence)).ToArray();
         return new(entries, $"{entries.Length:N0} 张已知路径图片写入候选。" +
@@ -27,9 +28,9 @@ public static class PatchImageScanner
     public static PatchImageScanResult Scan(LocalGameSource source, LoadedPatch patch, IEnumerable<string> archivePaths,
         CancellationToken token = default, IProgress<string>? progress = null)
     {
-        var ranges = PatchMediaScanner.ReadRanges(source, patch, archivePaths, ["ui"], token, progress);
-        if (ranges.Count == 0) return new([], "本补丁没有 UI 数据容器更改。");
-        var textures = source.EnumerateUiTextures(token, ranges.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase),
+        var ranges = PatchMediaScanner.ReadRanges(source, patch, archivePaths, LocalGameSource.ImageCategories, token, progress);
+        if (ranges.Count == 0) return new([], "本补丁没有图片相关数据容器更改。");
+        var textures = source.EnumerateImageTextures(token, ranges.Keys.ToHashSet(StringComparer.OrdinalIgnoreCase),
             (path, start, end) => PatchMediaScanner.Overlaps(ranges, path, start, end));
         const string evidence = "目标容器与差分 MD5 已验证。纹理存储区间（含对齐填充）与 VCDIFF 写入区间相交，可能包含容器重排。";
         var images = textures.Where(texture => PatchMediaScanner.Overlaps(ranges, texture.Container, texture.Offset, texture.End))

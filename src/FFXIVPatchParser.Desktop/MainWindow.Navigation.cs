@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -14,7 +15,7 @@ public partial class MainWindow
     private bool restoringNavigation;
 
     private sealed record NavigationLocation(RadioButton Page, string? Table = null, RowKey? Row = null,
-        int Column = -1, string? ImagePath = null, bool NewSide = false);
+        int Column = -1, string? ImagePath = null, bool NewSide = false, ImagePage ImageMode = ImagePage.Textures);
 
     private NavigationLocation CaptureNavigation()
     {
@@ -30,7 +31,12 @@ public partial class MainWindow
             return new(page, CurrentDiffTableName, line.Row.Key, column, NewSide: line.Label.StartsWith('+'));
         }
         if (page == DiffNav) return new(page, CurrentDiffTableName);
-        if (page == LocalImagesNav) return new(page, ImagePath: SqPackView.CurrentTexturePath);
+        if (page == LocalImagesNav)
+        {
+            var mode = IconPageTab.IsChecked == true ? ImagePage.Icons :
+                UldPageTab.IsChecked == true ? ImagePage.Uld : ImagePage.Textures;
+            return new(page, ImagePath: mode == ImagePage.Textures ? SqPackView.CurrentTexturePath : null, ImageMode: mode);
+        }
         return new(page);
     }
 
@@ -104,7 +110,17 @@ public partial class MainWindow
                 }
             }
             else if (destination.Page == LocalImagesNav)
-                await SqPackView.RestoreTextureLocationAsync(destination.ImagePath);
+            {
+                var tab = destination.ImageMode switch
+                {
+                    ImagePage.Icons => IconPageTab,
+                    ImagePage.Uld => UldPageTab,
+                    _ => TexturePageTab
+                };
+                tab.IsChecked = true;
+                if (destination.ImageMode == ImagePage.Textures)
+                    await SqPackView.RestoreTextureLocationAsync(destination.ImagePath);
+            }
         }
         catch (Exception ex) { SetStatus("无法恢复位置：" + ex.Message, true); }
         finally
@@ -143,8 +159,18 @@ public partial class MainWindow
         WindowContent.Margin = maximized ? new Thickness(Math.Max(8, frame.Left), Math.Max(8, frame.Top),
             Math.Max(8, frame.Right), Math.Max(8, frame.Bottom)) : default;
         WindowChrome.GetWindowChrome(this).CaptionHeight = 38 + WindowContent.Margin.Top;
-        MaximizeGlyph.Data = Geometry.Parse(maximized ? "M 4,4 H 11 V 11 H 4 Z M 1,8 V 1 H 8 V 4" : "M 1,1 H 11 V 11 H 1 Z");
+        MaximizeGlyph.Data = Geometry.Parse(maximized ? "M 4.5,4.5 H 12 V 12 H 4.5 Z M 2,9.5 V 2 H 9.5 V 4.5" : "M 2,2 H 12 V 12 H 2 Z");
         MaximizeButton.ToolTip = maximized ? "还原窗口" : "最大化";
         System.Windows.Automation.AutomationProperties.SetName(MaximizeButton, (string)MaximizeButton.ToolTip);
+    }
+
+    private void CenterCaptionText(object sender, SizeChangedEventArgs e)
+    {
+        if (sender is not TextBlock title) return;
+        var typeface = new Typeface(title.FontFamily, title.FontStyle, title.FontWeight, title.FontStretch);
+        var text = new FormattedText(title.Text, CultureInfo.CurrentUICulture, title.FlowDirection, typeface,
+            title.FontSize, title.Foreground, VisualTreeHelper.GetDpi(title).PixelsPerDip);
+        var ink = text.BuildGeometry(default).Bounds;
+        if (!ink.IsEmpty) title.RenderTransform = new TranslateTransform(0, e.NewSize.Height / 2 - ink.Y - ink.Height / 2);
     }
 }

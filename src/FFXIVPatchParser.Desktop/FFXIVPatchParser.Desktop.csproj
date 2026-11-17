@@ -9,4 +9,8 @@
   <ItemGroup>
     <None Update="THIRD-PARTY-NOTICES.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest"/>
   </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="Data/orchestrion.json" />
+    <None Update="Data/Orchestrion-LICENSE.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
 </Project>

@@ -20,7 +20,7 @@
     <Grid.RowDefinitions>
       <RowDefinition Height="Auto"/>
       <RowDefinition Height="*"/>
-      <RowDefinition Height="Auto"/>
+      <RowDefinition Height="Auto" SharedSizeGroup="BrowserFooter"/>
     </Grid.RowDefinitions>
     <WrapPanel x:Name="Actions" Margin="0,0,0,4" IsEnabled="False">
       <Button x:Name="ToggleZoomButton" Content="适应窗口" MinWidth="76" ToolTip="适应窗口并居中"
@@ -31,10 +31,10 @@
         <ComboBoxItem Content="深色背景"/>
         <ComboBoxItem Content="浅色背景"/>
       </ComboBox>
-      <Button x:Name="CopyPathButton" Content="复制路径" Click="CopyPath" Style="{StaticResource PreviewButton}"/>
-      <Button x:Name="SavePngButton" Content="保存 PNG…" ToolTip="保存原始分辨率和透明通道" Click="SavePng" Style="{StaticResource PreviewButton}"/>
+      <Button x:Name="CopyPathButton" Content="复制路径" Click="CopyPath" Style="{StaticResource CopyButton}" Height="30" Margin="0,0,6,4"/>
+      <Button x:Name="SavePngButton" Content="导出为 PNG" Click="SavePng" Style="{StaticResource ExportButton}" Margin="0,0,6,4"/>
     </WrapPanel>
-    <Border Grid.Row="1" BorderBrush="#E4E7EC" BorderThickness="1">
+    <Border Grid.Row="1" CornerRadius="6" BorderBrush="{StaticResource Border}" BorderThickness="1">
       <Canvas x:Name="Viewport" MinHeight="80" ClipToBounds="True" Background="{StaticResource Checkerboard}"
               SizeChanged="ResizeViewport" MouseWheel="ZoomWithWheel" MouseLeftButtonDown="StartPan"
               MouseMove="PanImage" MouseLeftButtonUp="EndPan" LostMouseCapture="StopPan">

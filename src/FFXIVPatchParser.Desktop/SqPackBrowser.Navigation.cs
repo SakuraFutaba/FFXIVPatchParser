@@ -2,6 +2,12 @@ namespace FFXIVPatchParser.Desktop;
 
 public partial class SqPackBrowser
 {
+    internal async Task ShowAudioFromPlayerAsync(GameAudio? selected)
+    {
+        PageRequested?.Invoke(SqPackPage.Audio);
+        if (selected is not null && await EnsureGameForNavigation()) await LocalAudioPanel.RevealAsync(selected);
+    }
+
     internal event Action? NavigationStarting;
     internal string? CurrentTexturePath { get; private set; }
     internal Task WaitForCurrentWorkAsync() => runningWork ?? Task.CompletedTask;

@@ -38,9 +38,26 @@ public sealed class RelationResolver(SaintCoinachDefinitions definitions, ITable
     {
         if (effective.TryGetValue(sheet, out var existing)) return existing;
         var imported = definitions.Get(sheet);
+        if (imported is not null && definitions.IsBound(sheet, source.Label, raw.Columns))
+        {
+            verified.Add(sheet);
+            return effective[sheet] = imported;
+        }
+        var builtIn = definitions.GetVerifiedBuiltIn(sheet, raw.Columns);
+        if (builtIn is not null && sheet == "TerritoryIntendedUse")
+        {
+            verified.Add(sheet);
+            return effective[sheet] = builtIn;
+        }
+        SheetDefinition? Fallback()
+        {
+            if (builtIn is null) return imported;
+            verified.Add(sheet);
+            return builtIn;
+        }
         var schemaKey = "schema:" + sheet;
         if (retryAfter.TryGetValue(schemaKey, out var retry) && retry > Environment.TickCount64)
-        { LastWarning = failures[schemaKey]; return imported; }
+        { LastWarning = failures[schemaKey]; return Fallback(); }
         void SchemaFailed(string message)
         {
             retryAfter[schemaKey] = Environment.TickCount64 + 15000;
@@ -52,23 +69,24 @@ public sealed class RelationResolver(SaintCoinachDefinitions definitions, ITable
             if (operationDeadline <= Environment.TickCount64)
             {
                 LastWarning ??= "部分关联未加载：本次读取已达到12秒预算；可再次打开以重试。";
-                return imported;
+                return Fallback();
             }
             using var budget = Budget(token);
             try { semantic = await schemaSource.ReadSemanticSchema(sheet, budget.Token) ?? raw; }
             catch (Exception ex) when (ex is HttpRequestException or IOException or InvalidDataException or InvalidOperationException)
-            { SchemaFailed($"表 {sheet} 的版本语义元数据读取失败（{ex.GetType().Name}）：{ex.Message}"); return imported; }
+            { SchemaFailed($"表 {sheet} 的版本语义元数据读取失败（{ex.GetType().Name}）：{ex.Message}"); return Fallback(); }
             catch (OperationCanceledException) when (!token.IsCancellationRequested)
-            { SchemaFailed($"表 {sheet} 的版本语义元数据读取超时；已启动的 CSV 缓存下载会继续"); return imported; }
+            { SchemaFailed($"表 {sheet} 的版本语义元数据读取超时；已启动的 CSV 缓存下载会继续"); return Fallback(); }
             if (!ReferenceEquals(semantic, raw))
             {
                 var aligned = AlignSchema(raw.Columns, semantic.Columns);
-                if (aligned == null) return effective[sheet] = null;
+                if (aligned == null) return effective[sheet] = Fallback();
                 semantic = semantic with { Columns = aligned };
                 verified.Add(sheet);
             }
         }
-        if (ReferenceEquals(semantic, raw) && !raw.Columns.Any(c => c.Name != "Column" + c.Id)) return effective[sheet] = imported;
+        if (!semantic.Columns.Any(c => c.Name.Length > 0 && c.Name != "Column" + c.Id))
+            return effective[sheet] = Fallback();
         // Some sheets use Singular, Text, etc. as the default display field. Obtain
         // that explicit declaration instead of guessing the first string column.
         if (imported == null && !semantic.Columns.Any(c => c.Name == "Name") && operationDeadline > Environment.TickCount64)
@@ -88,7 +106,7 @@ public sealed class RelationResolver(SaintCoinachDefinitions definitions, ITable
             else if (imported?.Fields.TryGetValue(index, out var f) == true && f.Name == c.Name) converter = f.Converter;
             fields[index] = new(index, c.Name, converter);
         }
-        return effective[sheet] = new(sheet, imported?.DefaultColumn, fields);
+        return effective[sheet] = new(sheet, imported?.DefaultColumn ?? builtIn?.DefaultColumn, fields);
     }
     private static IReadOnlyList<SheetColumn>? AlignSchema(IReadOnlyList<SheetColumn> raw, IReadOnlyList<SheetColumn> csv)
     {
@@ -278,7 +296,7 @@ public sealed class RelationResolver(SaintCoinachDefinitions definitions, ITable
         }
         finally { visited.Remove((sheet, key, position)); }
     }
-    private static string IconPath(uint id) => $"ui/icon/{id / 1000 * 1000:D6}/{id:D6}.tex";
+    internal static string IconPath(uint id) => $"ui/icon/{id / 1000 * 1000:D6}/{id:D6}.tex";
 
     private static string? FindTargetIcon(SheetData target, SheetDefinition definition, SheetCell[] values)
     {

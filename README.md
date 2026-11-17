@@ -53,7 +53,8 @@ Patch 的「文件系统」按补丁清单中的容器和文件路径展示差�
 - 侧栏一级入口 **补丁目录**位于 **Patch** 分组上方，列出官方更新、分卷数、大小和可访问性，可下载所选更新或打开本地 ZIP。同一更新的多个分卷可以一起打开。程序校验下载文件的大小和 MD5，通过校验的分卷会复用。
 - **表格 Diff** 在加载补丁后自动匹配 CHS 历史构建。左侧列出有变化的表，选择一张表后按 RowId、SubrowId 和列编号比较。侧栏底部显示当前 SqPack 游戏版本和补丁版本。
 - **SqPack → 文件系统**按原路径或哈希展开本地索引，可搜索虚拟路径、索引哈希和数据分片名。选中文件后，右侧显示大小、容器和偏移，同时使用现有表格、图片、模型、地图或音频预览。可用「查看 Hex」切换到所选文件的解包字节，用「打开…页」进入对应预览页。 [文件系统索引与预览](knowledge/sqpack-filesystem.md)
-- **SqPack** 和 **Diff** 都可折叠，各有表格、图片、模型和音频入口。本地表格直接读取 CHS 或无语言数据，支持按列筛选。表格滚动时按需加载更多行，向右滚动可查看所有列。
+- 左下角的「路径补全…」按容器统计已知和未知路径。可导入 ResLogger2、导入本地清单，或分批扫描游戏资源中的直接引用。补全结果与本地索引核对后保存在 `tmp/file-paths/`。专用预览出错时，只要文件能解包，仍可查看 Hex。
+- **SqPack** 和 **Patch** 都可折叠，各有表格、图片、模型和音频入口。本地表格直接读取 CHS 或无语言数据，支持按列筛选。表格滚动时按需加载更多行，向右滚动可查看所有列。
 - **设置**管理游戏目录及已有补丁所在的目录。支持游戏根目录、`game` 或 `sqpack`。设置存放在被忽略的 `tmp/ui/` 中，也可通过 `FFXIV_GAME_PATH` 指定游戏目录。自定义补丁目录供程序查找和打开已有 ZIP，新下载仍保存到 `tmp/patches/`。
 
 表格 Diff、本地 SqPack 和图片 Diff 的表名与路径使用靠左、缩进紧凑的目录树。搜索保留匹配项的父目录，点击叶子时按完整路径读取。可拖动表格 Diff 中间的分隔条调整目录宽度。
@@ -62,13 +63,15 @@ Patch 的「文件系统」按补丁清单中的容器和文件路径展示差�
 
 ### 图片、模型与音频
 
-图片、模型和音频页的扫描按钮都在右上角。打开补丁后，Diff 自动从通过校验的索引和差分中查找有已知路径的写入候选。「完整扫描」会校验本地目标数据容器并查找未知路径的资源。SqPack 页默认读取已知目录，可用「扫描资源索引」查找目录之外的资源。
+本地图片和音频页进入后自动显示当前索引中的已知路径；模型页保留名称分类，并在「全部已知模型路径」视图自动加载完整的已知路径目录。未知文件仍可在 SqPack 文件页按地址访问；模型的「扫描选项」保留手动未知模型扫描。打开补丁后，Diff 自动从通过校验的索引和差分中查找有已知路径的写入候选。补丁媒体页右上角的「完整扫描」会校验本地目标数据容器并查找未知路径的资源。
+
+「SqPack · 图片」还提供「图标浏览器」和「ULD」。图标按 ID 排列，悬停查看 ID 和原图，单击跳到图片页。ULD 可查看主题纹理、切片和节点，在居中的布局预览中逐帧查看已支持的动画轨道。 [ULD 界面资源与布局预览](knowledge/uld.md)
 
 **图片 Diff** 用 VCDIFF 写入区间筛选相交的纹理并预览本地图像。自动查找阶段校验目标索引和差分的 MD5，完整扫描再校验数据容器。列表包含新增、更新或容器重排的候选。未还原原始路径的 UI 图片以容器、偏移和哈希标识，仍可查看。扫描只读游戏文件。
 
-“本地图片”和“图片 Diff”共用预览器，新打开的图片默认以 100% 显示。滚轮以光标位置为中心缩放，按住鼠标左键拖动平移。用同一个按钮在「适应窗口」和「100%」间切换，也可选棋盘、深色或浅色背景。底部显示尺寸与缩放比例。“保存 PNG…”导出原始分辨率和 Alpha 透明通道。
+“本地图片”和“图片 Diff”共用预览器，可查看 `.tex` 和已识别路径的 `.atex` 特效贴图。新打开的图片默认以 100% 显示。滚轮以光标位置为中心缩放，按住鼠标左键拖动平移。用同一个按钮在「适应窗口」和「100%」间切换，也可选棋盘、深色或浅色背景。底部显示尺寸与缩放比例。“保存 PNG…”导出原始分辨率和 Alpha 透明通道。
 
-「SqPack → 模型」默认从本地 Excel 表和 SqPack 索引建立分类目录，包括宠物、召唤兽、坐骑、时尚配饰、战斗 NPC 和事件 NPC。可切换按模型编号分组，也可扫描索引查找未列入表的模型。输入游戏内 `.mdl` 路径可直接打开。选中条目后才读取网格、IMC 材质变体及纹理。视图支持旋转、平移、缩放和重置。模型缺少原始路径时，扫描结果会显示容器、偏移和哈希。
+「SqPack → 模型」默认从本地 Excel 表和 SqPack 索引建立分类目录，包括宠物、召唤兽、坐骑、时尚配饰、战斗 NPC 和事件 NPC。同组条目按实际行 ID 升序排列。右上角「目录选项」可切换按模型编号分组、补充 NPC 名称或调整扫描范围。输入游戏内 `.mdl` 路径可直接打开。选中条目后才读取网格、IMC 材质变体及纹理。视图支持旋转、平移、缩放和重置。模型缺少原始路径时，扫描结果会显示容器、偏移和哈希。
 
 模型目录将 `Companion`、`Mount`、`Ornament`、`BNpcBase` 和 `ENpcBase` 的模型引用连到 `ModelChara`。怪物路径里的 `m####` 是模型族编号，`b####` 是 MDL 身体子模型编号。`ModelChara` 的变体对应 IMC 子集，具体材质版本由 IMC 解析。SKLB 可以走共享骨架路径。人形 NPC 的完整外观需要组合装备和自定义数据，当前目录只列出可验证的单个模型资源。
 
@@ -76,15 +79,17 @@ Patch 的「文件系统」按补丁清单中的容器和文件路径展示差�
 
 动作面板会选中当前 PAP，尚未打开动作时优先选待机候选。可用动作槽两侧的箭头切换，切换后自动播放。打开支持的怪物模型时，程序会优先尝试 `resident/monster.pap` 的 idle。在「设置 → Godbert 动作解码库」填写 `hkAnimationInterop.dll` 的完整路径或包含该文件的目录。预览优先以 120 Hz 采样，缓存预算不足时改用 60 Hz。播放支持已验证的怪物本体及相应的 PAP 和四权重蒙皮布局。 [Godbert 发布页](https://github.com/xivapi/SaintCoinach/releases/tag/0b22b78)
 
-「SqPack → 音频」默认列出已知 BGM 路径，也可输入游戏内 `.scd` 路径直接打开。按需扫描后可试听只知道容器、偏移和哈希的音频。可切换音轨、播放、暂停、定位和导出。Windows 解码失败时，程序可使用 PATH 中已有的 FFmpeg 转换为 PCM，回退试听最长五分钟。导出保留完整音轨。
+「SqPack → 音频」默认列出已知 BGM 路径，也可输入游戏内 `.scd` 路径直接打开。按需扫描后可试听只知道容器、偏移和哈希的音频。可切换音轨、播放、暂停、定位和导出。FFmpeg 转码保留完整音轨。点击全局播放器左侧可以打开音频页并定位当前曲目。
 
-「SqPack → 地图」可按中文地名、区域用途、ID 或场景路径查找区域。右侧显示区域、地域、关联副本或任务、场景和地图纹理路径，可跳到原始表记录。3D 场景先显示带贴图的地形，再分批加载建筑和道具。选择「游戏地图」可查看客户端的二维地图纹理。 [地图资源与验证记录](knowledge/territories.md)
+在 SqPack 或 Patch 的音频目录双击文件可直接播放。底部播放栏在各页常驻，支持随机、列表循环、单曲循环、音量与收藏。点击播放栏右侧的列表图标可打开队列、曲库和收藏浮窗。按 Esc 或点击浮窗外可关闭。曲库和 SqPack 音频目录都能按曲名、场景或路径搜索。曲名来自随程序提供的 OrchestrionPlugin 资料，音频路径来自本地 `BGM.File`，两者按 `RowId` 关联。收藏保存在 `tmp/music/favorites.json`。 [音频和曲目数据](knowledge/sqpack-media.md#全局音乐播放与短音轨重播)
+
+「SqPack → 地图」可按中文地名、区域用途、ID 或场景路径查找区域。点击右侧的区域 ID、地图 ID、区域用途或副本／任务可打开对应表行。天气可用下拉框或两侧箭头切换，右键跳转到天气表。3D 场景先显示带贴图的地形，再分批加载建筑和道具。天空可用本地体积纹理进行实验预览，或用 ENVB 颜色轨道显示渐变穹顶。选择「游戏地图」可查看客户端的二维地图纹理。 [地图资源与验证记录](knowledge/territories.md)
 
 地图预览按材质参数处理树叶、草丛和贴花的透明边缘。模型预览还能从已验证的角色着色器和法线采样器读取发片遮罩。动作默认按 120 fps 采样，实际姿势提交频率随模型和系统变化。拖动或点击进度条可跳到任意时刻，保留当前播放或暂停状态。模型预览选中单个材质后，可展开「着色器包」查看 SHPK 路径、程序数量、材质键和采样器。 [着色器与 Alpha Clip](knowledge/shaders.md)
 
 地图和模型预览共用镜头操作。点击视口后，W/S 沿镜头朝向前进和后退，A/D 和方向键原地转向。按住鼠标左键或右键时，A/D 改为横移，左右键同按会前进。左键拖动绕当前中心旋转，右键拖动原地转向，中键拖动同时平移镜头和旋转中心。滚轮平滑推近或拉远镜头。
 
-按住 Shift 或 Ctrl 会将移动速度和滚轮幅度分别调为十倍或十分之一。空格和 Q 沿世界竖直方向升降。地图的「地图总览」恢复默认取景，「距离 20」将镜头放在当前旋转中心外 20 个世界单位，并对准中心。切换到游戏地图再返回 3D 场景时会保留镜头位置、朝向和旋转中心。「取当前视角」会捕获这三项，点击「保存起点」后可在以后打开该区域时恢复。自定义起点优先，清除后恢复唯一出生圈附近的视角或自动取景。起点保存在 `tmp/ui/map-start-positions.json`。
+按住 Shift 或 Ctrl 会将移动速度和滚轮幅度分别调为十倍或十分之一。空格和 Q 沿世界竖直方向升降。地图的「地图总览」恢复默认取景，「距离 20」将镜头放在当前旋转中心外 20 个世界单位，并对准中心。本次打开期间切换区域或切换二维、三维视图时，会记住每个区域的镜头位置、朝向和旋转中心。「取当前视角」会捕获这三项，点击「保存起点」可将其保存在 `tmp/ui/map-start-positions.json`，供下次启动使用。
 
 「模型 Diff」和「音频 Diff」也使用 VCDIFF 写入区间筛选候选，支持按路径或容器搜索结果。容器重排可能产生额外候选，删除项和旧版本内容需要旧版数据。
 
@@ -148,7 +153,7 @@ python ./scripts/Verify-Snapshot.py tmp/snapshots/current --output tmp/validatio
 
 ## 参考资料
 
-- 全资源浏览、索引哈希和预览调度。 [Alpha 文件系统](https://github.com/NotNite/Alpha#features) · [FFXIV Explorer fork](https://github.com/goaaats/ffxiv-explorer-fork) · [XivAlexander 索引结构](https://github.com/Soreepeong/XivAlexander/blob/main/XivAlexanderCommon/Sqex/Sqpack.h)
+- 全资源浏览、索引哈希、路径清单和预览调度。 [Alpha 文件系统](https://github.com/NotNite/Alpha#features) · [FFXIV Explorer fork](https://github.com/goaaats/ffxiv-explorer-fork) · [XivAlexander 索引结构](https://github.com/Soreepeong/XivAlexander/blob/main/XivAlexanderCommon/Sqex/Sqpack.h) · [ResLogger2 公开清单](https://rl2.perchbird.dev/Downloads)
 - 旧版服务端区域、NPC、事件和 EXD 结构。 [Sapphire](https://github.com/SapphireServer/Sapphire) · [ExdData](https://github.com/SapphireServer/Sapphire/blob/master/src/common/Exd/ExdData.h)
 - 材质、着色器包和法线遮罩。 [Penumbra.GameData](https://github.com/Ottermandias/Penumbra.GameData) · [Penumbra 材质导出](https://github.com/xivdev/Penumbra/blob/testing/Penumbra/Import/Models/Export/MaterialExporter.cs) · [Meddle](https://github.com/PassiveModding/Meddle)
 - 国服 V3 补丁元数据、下载及安装流程。 [Dalamud 国服分支](https://github.com/Dalamud-DailyRoutines/Dalamud) · [DailyRoutines 本地化](https://github.com/Dalamud-DailyRoutines/DailyRoutines.Localizations) · [XIVLauncher CN 实现](https://github.com/AtmoOmen/FFXIVQuickLauncher/tree/65972f758b47615f321d4f3da509e3ade3b14489) · [官方版本目录](https://v3launcher.jijiagames.com/v3launcher/build/ver2data/100001900/8847/-1/ver2.dat)
@@ -157,7 +162,9 @@ python ./scripts/Verify-Snapshot.py tmp/snapshots/current --output tmp/validatio
 - 模型材质、骨骼和动作文件。 [TexTools Framework](https://github.com/TexTools/xivModdingFramework) · [Godbert](https://github.com/xivapi/SaintCoinach/tree/master/Godbert)
 - 模型目录和名称映射。 [TexTools 模型缓存](https://github.com/TexTools/xivModdingFramework/blob/master/xivModdingFramework/Cache/XivCache.cs) · [TexTools 同伴模型](https://github.com/TexTools/xivModdingFramework/blob/master/xivModdingFramework/Items/Categories/Companions.cs) · [Godbert 怪物视图](https://github.com/xivapi/SaintCoinach/blob/master/Godbert/ViewModels/MonstersViewModel.cs) · [Anamnesis NPC 名称](https://github.com/imchillin/Anamnesis/blob/e180a0f124cb45db5bf56b283b41b8920a7e4c2e/Anamnesis/Data/NpcNames.json) · [FFCafé 字符串数据库](https://strings-legacy.ffcafe.cn/)
 - 区域目录、静态场景和地图纹理路径。 [Godbert Territories](https://github.com/xivapi/SaintCoinach/blob/master/Godbert/ViewModels/TerritoryViewModel.cs) · [Hyperborea](https://github.com/kawaii/Hyperborea) · [ECommons 区域选择器](https://github.com/NightmareXIV/ECommons/blob/e6be8f0fd7786a9e1781db2e71cb5b9146f04980/ECommons/ImGuiMethods/TerritorySelection/TerritorySelector.cs) · [SaintCoinach Map](https://github.com/xivapi/SaintCoinach/blob/master/SaintCoinach/Xiv/Map.cs)
-- SCD 音频、试听转换和曲目目录。 [Lumina ScdFile](https://github.com/NotAdam/Lumina/blob/8802d66a3cb3032be2fcf998bb10e864221bdb13/src/Lumina/Data/Files/ScdFile.cs) · [FFmpeg](https://ffmpeg.org/) · [OrchestrionPlugin](https://github.com/perchbirdd/OrchestrionPlugin/tree/main/Orchestrion/Data)
+- 地图天气、环境轨道、MapEffect 和战斗 NPC 主目标。 [Physis ENVB](https://github.com/redstrate/Physis/blob/main/src/envb.rs) · [FFXIVClientStructs 环境场景](https://github.com/aers/FFXIVClientStructs/blob/main/FFXIVClientStructs/FFXIV/Client/Graphics/Scene/EnvScene.cs) · [BossMod 框架](https://github.com/awgil/ffxiv_bossmod/tree/ee5b04a4ab63fb4313d29dbbb671f029f74752b7/BossMod) · [BossMod 机制模块](https://github.com/awgil/ffxiv_bossmod/tree/ee5b04a4ab63fb4313d29dbbb671f029f74752b7/BossMod.Modules)
+- SCD 音频、试听转换和曲目目录。 [Lumina ScdFile](https://github.com/NotAdam/Lumina/blob/8802d66a3cb3032be2fcf998bb10e864221bdb13/src/Lumina/Data/Files/ScdFile.cs) · [FFmpeg](https://ffmpeg.org/) · [OrchestrionPlugin 曲目关联](https://github.com/perchbirdd/OrchestrionPlugin/blob/e1031563f03d0bd7ae833326e0ac9f05aa67a9bb/Orchestrion/Persistence/SongList.cs#L74-L135)
 - 搜索框清除图标。 [VS Code Codicons](https://github.com/microsoft/vscode-codicons/blob/main/src/icons/close.svg) · [许可证与署名](src/FFXIVPatchParser.Desktop/THIRD-PARTY-NOTICES.txt)
+- 播放器的循环、随机和队列图标。 [Lucide](https://lucide.dev/icons/) · [许可证与署名](src/FFXIVPatchParser.Desktop/THIRD-PARTY-NOTICES.txt)
 - CHS 历史数据及导出链。 [InfSein/ffxiv-datamining-mixed](https://github.com/InfSein/ffxiv-datamining-mixed) · [InfSein/dumpcsv](https://github.com/InfSein/dumpcsv) · [thewakingsands/dumpcsv](https://github.com/thewakingsands/dumpcsv) · [xivapi/SaintCoinach](https://github.com/xivapi/SaintCoinach)
 - 二进制差分及桌面发布。 [RFC 3284 VCDIFF](https://www.rfc-editor.org/rfc/rfc3284) · [xdelta3](https://github.com/jmacd/xdelta) · [.NET 自包含发布](https://learn.microsoft.com/dotnet/core/deploying/)

@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 
 namespace FFXIVPatchParser.Desktop;
 
@@ -9,32 +10,16 @@ public partial class SqPackBrowser
     private Task patchCatalogueTask = Task.CompletedTask;
     private bool patchCatalogueNeeded;
     private IReadOnlyList<PatchMediaEntry> patchModels = [], patchAudio = [];
+    private IReadOnlyDictionary<string, MusicTrackText> patchSongTitles = new Dictionary<string, MusicTrackText>();
 
     public bool IsPatchMediaPage => currentPage is SqPackPage.PatchImages or SqPackPage.PatchModels or SqPackPage.PatchAudio;
-    public bool IsLocalMediaPage => currentPage is SqPackPage.Images or SqPackPage.Models or SqPackPage.Audio;
-    public bool IsMediaPage => IsPatchMediaPage || IsLocalMediaPage;
     public bool CanScanMedia => operation == null && game != null &&
-        (IsLocalMediaPage || IsPatchMediaPage && patch != null && patchArchives.Length > 0);
+        IsPatchMediaPage && patch != null && patchArchives.Length > 0;
 
     public async Task ScanCurrentMediaAsync()
     {
         switch (currentPage)
         {
-            case SqPackPage.Images: await ScanIcons(); break;
-            case SqPackPage.Models:
-                await Work("正在扫描模型索引…", async token =>
-                {
-                    var progress = WorkProgress(token);
-                    return await LocalModelsPanel.ScanUnknownAsync(token, progress);
-                });
-                break;
-            case SqPackPage.Audio:
-                await Work("正在扫描音频索引…", async token =>
-                {
-                    await LocalAudioPanel.ScanUnknownAsync(token);
-                    return "音频扫描完成";
-                });
-                break;
             case SqPackPage.PatchImages: await ScanPatchImages(); break;
             case SqPackPage.PatchModels: await ScanMedia(PatchMediaKind.Model); break;
             case SqPackPage.PatchAudio: await ScanMedia(PatchMediaKind.Audio); break;
@@ -46,6 +31,8 @@ public partial class SqPackBrowser
 
     private void SetMediaSource(LocalGameSource? source)
     {
+        LocalIconBrowser.SetSource(source);
+        LocalUldBrowser.SetSource(source);
         LocalModelsPanel.SetSource(source);
         LocalMapsPanel.SetSource(source);
         LocalAudioPanel.SetSource(source);
@@ -57,6 +44,7 @@ public partial class SqPackBrowser
     {
         patchCatalogueNeeded = patch != null && patchArchives.Length > 0;
         patchModels = patchAudio = [];
+        patchSongTitles = new Dictionary<string, MusicTrackText>();
         PathTreeView.Reset(PatchModelsList);
         PathTreeView.Reset(PatchAudioList);
         PatchModelSearch.Clear();
@@ -96,8 +84,13 @@ public partial class SqPackBrowser
                     () => PatchMediaScanner.ScanKnownPaths(source, loaded, archives, PatchMediaKind.Model, token),
                     result => ShowPatchMedia(PatchMediaKind.Model, result), token);
                 await ReadKnownPatchEntries(PatchAudioSummary,
-                    () => PatchMediaScanner.ScanKnownPaths(source, loaded, archives, PatchMediaKind.Audio, token),
-                    result => ShowPatchMedia(PatchMediaKind.Audio, result), token);
+                    () => (Scan: PatchMediaScanner.ScanKnownPaths(source, loaded, archives, PatchMediaKind.Audio, token),
+                           Titles: MusicMetadata.ReadCatalogOrEmpty(source)),
+                    result =>
+                    {
+                        patchSongTitles = result.Titles;
+                        ShowPatchMedia(PatchMediaKind.Audio, result.Scan);
+                    }, token);
             }
             catch (OperationCanceledException) when (token.IsCancellationRequested) { }
             finally
@@ -177,7 +170,9 @@ public partial class SqPackBrowser
     private void ApplyPatchAudioFilter()
     {
         var query = PatchAudioSearch.Text;
-        var tree = PathTree.Build(patchAudio, entry => entry.Path, query, entry => entry.Container);
+        var tree = PathTree.Build(patchAudio, entry => entry.Path, query,
+            entry => entry.Container + " " + patchSongTitles.GetValueOrDefault(entry.Path)?.SearchText,
+            leafLabelSelector: entry => MusicMetadata.DirectoryLabel(entry.Path, patchSongTitles.GetValueOrDefault(entry.Path)));
         PathTreeView.SetItems(PatchAudioList, tree, query);
     }
 
@@ -199,5 +194,12 @@ public partial class SqPackBrowser
     {
         if (PathTreeView.IsRestoringSelection(PatchAudioList)) return;
         if (e.NewValue is PathTreeNode { Payload: PatchMediaEntry entry }) await PatchAudioPreview.OpenAsync(entry.Path);
+    }
+
+    private async void PlayPatchAudioFile(object sender, MouseButtonEventArgs e)
+    {
+        if (AudioPreview.GetDoubleClickedFile(PatchAudioList, e)?.Payload is not PatchMediaEntry entry) return;
+        e.Handled = true;
+        await PatchAudioPreview.OpenAndPlayAsync(entry.Path);
     }
 }

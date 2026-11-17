@@ -14,6 +14,9 @@ public partial class SqPackFileTree : UserControl
     private string selectedFolder = "";
     private CancellationTokenSource? building, filtering;
     private Task buildTask = Task.CompletedTask;
+    private PathCoveragePanel? coveragePanel;
+    private Task coverageCloseTask = Task.CompletedTask;
+    private bool pathCoverageAvailable = true, coverageClosing;
 
     public SqPackFileTree() => InitializeComponent();
 
@@ -25,6 +28,7 @@ public partial class SqPackFileTree : UserControl
         building?.Cancel();
         filtering?.Cancel();
         source = game;
+        CloseCoverage();
         index = null;
         selected = null;
         selectedFolder = "";
@@ -32,20 +36,94 @@ public partial class SqPackFileTree : UserControl
         DirectoryTree.ItemsSource = null;
         FileSearch.Clear();
         FileSearch.IsEnabled = false;
+        PathCoverageButton.IsEnabled = false;
         FileCount.Text = game == null ? "请在设置中连接游戏目录" : "等待读取索引";
         StartIndex();
     }
 
     internal async Task StopLoadingAsync()
     {
+        CloseCoverage();
+        await coverageCloseTask;
         building?.Cancel();
         filtering?.Cancel();
         await buildTask;
     }
 
-    private void VisibilityChanged(object sender, DependencyPropertyChangedEventArgs e) => StartIndex();
+    internal void SetPathCoverageAvailable(bool available)
+    {
+        pathCoverageAvailable = available;
+        UpdatePathCoverageButton();
+        if (available) StartIndex();
+        else CloseCoverage();
+    }
+
+    private void VisibilityChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (IsVisible) StartIndex();
+        else CloseCoverage();
+    }
 
     private void Retry(object sender, RoutedEventArgs e) => StartIndex();
+
+    private void OpenPathCoverage(object sender, RoutedEventArgs e)
+    {
+        if (coveragePanel != null)
+        {
+            DismissCoverage();
+            return;
+        }
+        if (!pathCoverageAvailable || coverageClosing || source is not { } game || index is null || Window.GetWindow(this) is not { } owner)
+            return;
+        coveragePanel = new PathCoveragePanel(game, owner);
+        coveragePanel.CloseRequested += DismissCoverage;
+        CoveragePopup.Child = coveragePanel;
+        CoveragePopup.IsOpen = true;
+    }
+
+    private void CoverageOpened(object? sender, EventArgs e) => coveragePanel?.Open();
+
+    private void CoverageClosed(object? sender, EventArgs e) => CloseCoverage();
+
+    private void DismissCoverage()
+    {
+        CloseCoverage();
+        if (PathCoverageButton.IsEnabled && IsVisible) PathCoverageButton.Focus();
+    }
+
+    private void CloseCoverage()
+    {
+        if (coveragePanel is not { } panel) return;
+        coveragePanel = null;
+        coverageClosing = true;
+        panel.CloseRequested -= DismissCoverage;
+        CoveragePopup.IsOpen = false;
+        CoveragePopup.Child = null;
+        UpdatePathCoverageButton();
+        coverageCloseTask = FinishCoverageAsync(panel);
+    }
+
+    private async Task FinishCoverageAsync(PathCoveragePanel panel)
+    {
+        try
+        {
+            await panel.StopAsync();
+            if (!panel.PathsChanged || source != panel.Source) return;
+            filtering?.Cancel();
+            index = null;
+            FileSearch.IsEnabled = false;
+            DirectoryTree.ItemsSource = null;
+            await buildTask;
+            if (source == panel.Source && pathCoverageAvailable) StartIndex();
+        }
+        finally
+        {
+            coverageClosing = false;
+            UpdatePathCoverageButton();
+        }
+    }
+
+    private void UpdatePathCoverageButton() => PathCoverageButton.IsEnabled = pathCoverageAvailable && !coverageClosing && index != null;
 
     private void StartIndex()
     {
@@ -61,10 +139,19 @@ public partial class SqPackFileTree : UserControl
         FileCount.Text = "正在读取 SqPack 索引…";
         try
         {
-            var result = await Task.Run(() => SqPackFileTreeIndex.Build(game, pending.Token), pending.Token);
+            var file = selected;
+            var result = await Task.Run(() => SqPackFileTreeIndex.Build(game, pending.Token, file), pending.Token);
             if (pending.IsCancellationRequested || source != game) return;
             index = result;
+            if (result.Selection is { } selection && selected == file)
+            {
+                selected = selection.Entry;
+                selectedFolder = selection.Folder;
+                ExpandAncestors(selectedFolder);
+                if (file?.KnownPath != selection.Entry.KnownPath) FileSelected?.Invoke(selection.Entry);
+            }
             FileSearch.IsEnabled = true;
+            UpdatePathCoverageButton();
             await ApplySearch();
         }
         catch (OperationCanceledException) when (pending.IsCancellationRequested) { }
@@ -111,9 +198,14 @@ public partial class SqPackFileTree : UserControl
         if (e.NewValue is not Node { Entry: { } entry } node || entry == selected) return;
         selected = entry;
         selectedFolder = node.ParentPath;
-        for (var folder = node.ParentPath; folder.Length > 0; folder = folder[..Math.Max(0, folder.LastIndexOf('/'))])
-            expanded.Add(folder);
+        ExpandAncestors(node.ParentPath);
         FileSelected?.Invoke(entry);
+    }
+
+    private void ExpandAncestors(string path)
+    {
+        for (var folder = path; folder.Length > 0; folder = folder[..Math.Max(0, folder.LastIndexOf('/'))])
+            expanded.Add(folder);
     }
 
     private void RevealFile(SqPackFileTreeIndex.Folder folder, Node[] items, SqPackFileSystemEntry file)

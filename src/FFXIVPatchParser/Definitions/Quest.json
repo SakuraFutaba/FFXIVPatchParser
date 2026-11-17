@@ -1,0 +1,11 @@
+{
+  "sheet": "Quest",
+  "schemaHash": "ABFDCFAE6766DD683E9069A912FF017C8F618234BC3096998A7FD17E5F7C79B9",
+  "definitions": [
+    {
+      "index": 0,
+      "name": "Name"
+    }
+  ],
+  "defaultColumn": "Name"
+}

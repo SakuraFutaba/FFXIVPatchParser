@@ -1,0 +1,22 @@
+{
+  "sheet": "Weather",
+  "schemaHash": "506F1F106617EDA0E5ECCBC547DE5C19F042890B4EC1775970F25791539A41A6",
+  "definitions": [
+    {
+      "index": 0,
+      "name": "Icon",
+      "converter": {
+        "type": "icon"
+      }
+    },
+    {
+      "index": 1,
+      "name": "Name"
+    },
+    {
+      "index": 2,
+      "name": "Description"
+    }
+  ],
+  "defaultColumn": "Name"
+}

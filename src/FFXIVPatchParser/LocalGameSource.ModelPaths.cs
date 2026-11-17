@@ -28,6 +28,9 @@ public sealed partial class LocalGameSource
                     token.ThrowIfCancellationRequested();
                     if (NormalizeModelPath(line) is { } path) paths.Add(path);
                 }
+            if (File.Exists(VerifiedPathCatalog))
+                foreach (var line in ReadBoundedPathLines(VerifiedPathCatalog, token))
+                    if (NormalizeModelPath(line.Split('\t', 2)[0]) is { } path) paths.Add(path);
             Directory.CreateDirectory(Path.GetDirectoryName(ModelPathCatalog)!);
             var staging = ModelPathCatalog + "." + Guid.NewGuid().ToString("N") + ".partial";
             try
@@ -39,6 +42,9 @@ public sealed partial class LocalGameSource
             finally { if (File.Exists(staging)) File.Delete(staging); }
             catalogModelPaths = null;
             modelLocations.Clear();
+            fileSystemNames = null;
+            fileSystemEntries.Clear();
+            Interlocked.Increment(ref mediaCatalogRevision);
             return paths.Count;
         }
     }

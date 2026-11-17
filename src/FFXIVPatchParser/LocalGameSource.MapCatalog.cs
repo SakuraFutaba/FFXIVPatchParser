@@ -10,7 +10,11 @@ namespace FFXIVPatchParser;
 public sealed record NamedMapEntry(uint TerritoryId, uint MapId, string Name, string Zone, string Region,
     string ContentName, uint IntendedUseId, string IntendedUse, string Category, string Bg, string ScenePath,
     string MapCode, string? MapTexturePath, uint PlaceNameId, uint ZonePlaceNameId, uint RegionPlaceNameId,
-    bool HasLocalizedName);
+    bool HasLocalizedName)
+{
+    public string? ContentSheet { get; init; }
+    public uint ContentRowId { get; init; }
+}
 
 public sealed partial class LocalGameSource
 {
@@ -93,11 +97,17 @@ public sealed partial class LocalGameSource
                         region = MapCatalogName(places, mapRegionId, 0);
                         if (region.Length > 0) regionId = mapRegionId;
                     }
-                    var content = MapCatalogName(duties, MapCatalogId(territory, 10), 43);
+                    var contentRowId = MapCatalogId(territory, 10);
+                    var content = MapCatalogName(duties, contentRowId, 43);
+                    string? contentSheet = content.Length > 0 ? "ContentFinderCondition" : null;
                     var questBattleId = MapCatalogId(territory, 23);
                     if (content.Length == 0 && questBattleId != 0 &&
                         questBattles.Value is { } battles && battles.TryGetRow(questBattleId, out var battle))
-                        content = MapCatalogName(quests.Value, MapCatalogId(battle, 0), 0);
+                    {
+                        contentRowId = MapCatalogId(battle, 0);
+                        content = MapCatalogName(quests.Value, contentRowId, 0);
+                        if (content.Length > 0) contentSheet = "Quest";
+                    }
 
                     var mapName = hasMap ? MapCatalogName(places, MapCatalogId(map, 11), 0) : "";
                     var localizedName = FirstMapName(place, content, mapName, zone);
@@ -106,7 +116,11 @@ public sealed partial class LocalGameSource
                     var useId = MapCatalogId(territory, 9);
                     var (use, category) = MapCatalogUse(useId);
                     result.Add(new(territory.RowId, mapId, name, zone, region, content, useId, use, category, bg, scene,
-                        mapCode, FindMapTexture(mapCode), placeId, zoneId, regionId, localizedName is not null));
+                        mapCode, FindMapTexture(mapCode), placeId, zoneId, regionId, localizedName is not null)
+                    {
+                        ContentSheet = contentSheet,
+                        ContentRowId = contentSheet == null ? 0 : contentRowId
+                    });
                 }
 
                 namedMaps = Array.AsReadOnly(result.OrderBy(entry => entry.TerritoryId).ToArray());

@@ -20,9 +20,14 @@ public sealed partial class LocalGameSource
 {
     private static readonly string[] FileSystemCategories = ["common", "bgcommon", "bg", "cut", "chara", "shader", "ui", "sound", "vfx", "ui_script", "exd", "game_script", "music"];
     private sealed record FileSystemPack(SqPack Pack, Category Category, byte Dat, SqPackFileSystemContainer Info);
+    private sealed class FileSystemNameTable
+    {
+        public readonly Dictionary<ulong, (string? Path, uint FullHash)> Primary = [];
+        public readonly Dictionary<uint, (string? Path, ulong SplitHash)> Secondary = [];
+    }
     private Dictionary<string, FileSystemPack>? fileSystemPacks;
     private readonly Dictionary<string, IReadOnlyList<SqPackFileSystemEntry>> fileSystemEntries = new(StringComparer.OrdinalIgnoreCase);
-    private Dictionary<(string Repository, string Category, ulong Hash, bool Index2), string?>? fileSystemNames;
+    private Dictionary<(string Repository, string Category), FileSystemNameTable>? fileSystemNames;
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> fileSystemModelContexts = new(StringComparer.OrdinalIgnoreCase);
     private static string FileSystemPathCatalog => System.IO.Path.Combine(Workspace.Temp, "file-paths", "catalog.txt");
 
@@ -187,6 +192,7 @@ public sealed partial class LocalGameSource
             if (fileSystemEntries.TryGetValue(containerId, out var cached)) return cached;
             if (!fileSystemPacks!.TryGetValue(containerId, out var pack)) throw new FileNotFoundException("未知 SqPack 容器。");
             EnsureFileSystemNames(token);
+            fileSystemNames!.TryGetValue((pack.Info.Repository, pack.Info.Category), out var names);
             var siblings = fileSystemPacks.Values.Where(p => ReferenceEquals(p.Category, pack.Category)).ToDictionary(p => p.Dat);
             var lengths = siblings.ToDictionary(p => p.Key, p => new FileInfo(p.Value.Pack.FullName).Length);
             var results = siblings.ToDictionary(p => p.Key, _ => new List<SqPackFileSystemEntry>());
@@ -198,11 +204,19 @@ public sealed partial class LocalGameSource
                 if (!siblings.TryGetValue(dat, out var sibling)) continue;
                 var offset = (long)(data & ~15u) * 8;
                 if (offset < 0x800 || offset > lengths[dat] - 24) continue;
-                var known = row.Path ?? fileSystemNames!.GetValueOrDefault((sibling.Info.Repository, sibling.Info.Category, row.Hash, row.IsIndex2));
-                if (known is not null && row.FullPathHash is uint fullHash && GameData.ParseFilePath(known)!.Index2Hash != fullHash) known = null;
-                if (known is null && !row.IsIndex2 && row.FullPathHash is uint alternateHash &&
-                    fileSystemNames!.GetValueOrDefault((sibling.Info.Repository, sibling.Info.Category, alternateHash, true)) is { } alternatePath &&
-                    GameData.ParseFilePath(alternatePath)!.IndexHash == row.Hash) known = alternatePath;
+                var known = row.Path;
+                if (known is null && names is not null)
+                {
+                    if (row.IsIndex2) known = names.Secondary.GetValueOrDefault((uint)row.Hash).Path;
+                    else
+                    {
+                        var primary = names.Primary.GetValueOrDefault(row.Hash);
+                        if (row.FullPathHash is not uint fullHash || primary.FullHash == fullHash) known = primary.Path;
+                        if (known is null && row.FullPathHash is uint alternateHash &&
+                            names.Secondary.TryGetValue(alternateHash, out var alternate) && alternate.SplitHash == row.Hash)
+                            known = alternate.Path;
+                    }
+                }
                 results[dat].Add(new(sibling.Info.Id, offset, row.Hash, row.IsIndex2, known) { FullPathHash = row.FullPathHash });
             }
             foreach (var (dat, result) in results)
@@ -214,20 +228,18 @@ public sealed partial class LocalGameSource
     private void EnsureFileSystemNames(CancellationToken token)
     {
         if (fileSystemNames is not null) return;
-        var names = new Dictionary<(string, string, ulong, bool), string?>();
+        var names = new Dictionary<(string, string), FileSystemNameTable>();
         void Add(string value)
         {
             token.ThrowIfCancellationRequested();
             var path = NormalizeFileSystemPath(value);
             if (path is null || GameData.ParseFilePath(path) is not { } parsed) return;
-            AddHash(parsed.IndexHash, false);
-            AddHash(parsed.Index2Hash, true);
-            void AddHash(ulong hash, bool index2)
-            {
-                var key = (parsed.Repository, parsed.Category, hash, index2);
-                if (!names.TryGetValue(key, out var previous)) names.Add(key, path);
-                else if (previous != path) names[key] = null;
-            }
+            var key = (parsed.Repository, parsed.Category);
+            if (!names.TryGetValue(key, out var table)) names.Add(key, table = new());
+            if (!table.Primary.TryAdd(parsed.IndexHash, (path, parsed.Index2Hash)) && table.Primary[parsed.IndexHash].Path != path)
+                table.Primary[parsed.IndexHash] = default;
+            if (!table.Secondary.TryAdd(parsed.Index2Hash, (path, parsed.IndexHash)) && table.Secondary[parsed.Index2Hash].Path != path)
+                table.Secondary[parsed.Index2Hash] = default;
         }
         Add("exd/root.exl");
         foreach (var name in SheetNames)
@@ -254,6 +266,12 @@ public sealed partial class LocalGameSource
         foreach (var path in ListIcons(token)) Add(path);
         foreach (var file in new[] { ModelPathCatalog, FileSystemPathCatalog })
             if (File.Exists(file)) foreach (var line in File.ReadLines(file)) Add(line);
+        if (File.Exists(VerifiedPathCatalog))
+            foreach (var line in ReadBoundedPathLines(VerifiedPathCatalog, token))
+            {
+                var end = line.IndexOf('\t');
+                if (end > 0) Add(line[..end]);
+            }
         if (namedModels is not null) foreach (var entry in namedModels) Add(entry.Path);
         foreach (var path in GetMusicNames(token).Values) Add(path);
         knownModelNames ??= BuildKnownModelNames(token);
@@ -263,9 +281,14 @@ public sealed partial class LocalGameSource
 
     private static string? NormalizeFileSystemPath(string value)
     {
-        // 同时接受 Alpha/ResLogger CSV，路径位于最后一列。
-        var path = value[(value.LastIndexOf(',') + 1)..].Trim().Replace('\\', '/').ToLowerInvariant();
-        if (path.Length is 0 or > 1024 || !path.Contains('/') || path.StartsWith('/') || path.Contains(':') || path.Split('/').Any(p => p is "" or "." or "..")) return null;
+        // 也接受路径位于最后一列的 CSV 和 TSV。
+        var separator = Math.Max(value.LastIndexOf(','), value.LastIndexOf('\t'));
+        var path = value[(separator + 1)..].Trim().Trim('"').Replace('\\', '/').ToLowerInvariant();
+        if (path.Length is 0 or > 1024 || !path.Contains('/') || path.StartsWith('/') || path.Contains(':')) return null;
+        var parts = path.Split('/');
+        if (parts.Any(p => p is "" or "." or "..")) return null;
+        // Lumina 7.7.2 检查扩展包时直接读取第二段的前三个字符；截断的 e/ex 会越界。
+        if (parts[1] is "e" or "ex") return null;
         return GameData.ParseFilePath(path) is null ? null : path;
     }
 
@@ -316,14 +339,15 @@ public sealed partial class LocalGameSource
                 modelAddresses[locator] = (pack.Pack, entry.Offset);
                 if (entry.KnownPath is { } context) fileSystemModelContexts[locator] = context;
             }
-            if (type == 4) textureAddresses[locator] = (pack.Pack, entry.Offset);
+            var isTexture = IsImageTexture(type, entry.KnownPath);
+            if (isTexture) textureAddresses[locator] = (pack.Pack, entry.Offset);
             if (entry.KnownPath?.EndsWith(".scd", StringComparison.OrdinalIgnoreCase) == true || audioAddresses.ContainsKey(locator + ".scd") ||
                 (offset == 0 && bytes.AsSpan().StartsWith("SEDBSSCF"u8)))
             {
                 locator = locator.ToLowerInvariant() + ".scd";
                 audioAddresses[locator] = (pack.Pack, entry.Offset);
             }
-            return new(locator, type switch { 2 => "Standard", 3 => "Model", _ => "Texture" }, size, bytes, offset + bytes.Length < size, offset);
+            return new(locator, isTexture ? "Texture" : type == 3 ? "Model" : "Standard", size, bytes, offset + bytes.Length < size, offset);
         }
     }
 

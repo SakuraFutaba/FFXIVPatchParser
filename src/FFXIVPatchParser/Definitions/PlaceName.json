@@ -1,0 +1,11 @@
+{
+  "sheet": "PlaceName",
+  "schemaHash": "9077AAD8CDDA511D426E2882442FE88181E63E95913DC8F10E5A3319C3C0569D",
+  "definitions": [
+    {
+      "index": 0,
+      "name": "Name"
+    }
+  ],
+  "defaultColumn": "Name"
+}

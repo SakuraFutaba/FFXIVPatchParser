@@ -38,7 +38,8 @@ public partial class SqPackBrowser
         try
         {
             string? status = null;
-            if (related && !definitionDownloads.TryGetValue(sheet, out status))
+            if (related && Definitions.GetVerifiedBuiltIn(sheet, raw.Columns) is null &&
+                !definitionDownloads.TryGetValue(sheet, out status))
             {
                 using var download = CancellationTokenSource.CreateLinkedTokenSource(token);
                 download.CancelAfter(TimeSpan.FromSeconds(8));

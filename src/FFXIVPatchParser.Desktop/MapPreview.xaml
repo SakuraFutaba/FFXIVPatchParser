@@ -3,7 +3,28 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:FFXIVPatchParser.Desktop"
              IsVisibleChanged="PageVisibilityChanged">
-  <Grid Background="#F7F8FA">
+  <UserControl.Resources>
+    <Style x:Key="MapFieldLink" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+      <Setter Property="Background" Value="Transparent"/>
+      <Setter Property="BorderThickness" Value="0"/>
+      <Setter Property="Padding" Value="2"/>
+      <Setter Property="Margin" Value="0,0,4,0"/>
+      <Setter Property="Foreground" Value="{StaticResource Accent}"/>
+      <Setter Property="ToolTip" Value="{Binding Content.Tooltip, RelativeSource={RelativeSource Self}}"/>
+      <Setter Property="AutomationProperties.Name" Value="{Binding Content.Tooltip, RelativeSource={RelativeSource Self}}"/>
+      <Setter Property="ContentTemplate">
+        <Setter.Value>
+          <DataTemplate>
+            <StackPanel>
+              <TextBlock Text="{Binding Label}" Foreground="{StaticResource Muted}" FontSize="11"/>
+              <TextBlock Text="{Binding Value}" TextTrimming="CharacterEllipsis"/>
+            </StackPanel>
+          </DataTemplate>
+        </Setter.Value>
+      </Setter>
+    </Style>
+  </UserControl.Resources>
+  <Grid Background="{StaticResource WorkspaceSurface}">
     <Grid.ColumnDefinitions>
       <ColumnDefinition x:Name="MapBrowserColumn" Width="284" MinWidth="215"/>
       <ColumnDefinition x:Name="MapDividerColumn" Width="8"/>
@@ -11,46 +32,65 @@
       <ColumnDefinition Width="8"/>
       <ColumnDefinition Width="230" MinWidth="180"/>
     </Grid.ColumnDefinitions>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="*"/>
+      <RowDefinition Height="Auto" SharedSizeGroup="BrowserFooter"/>
+    </Grid.RowDefinitions>
     <DockPanel x:Name="MapBrowserPanel">
       <TextBox x:Name="MapSearch" Style="{StaticResource SearchTextBox}" DockPanel.Dock="Top" Tag="搜索地名、区域用途、ID 或路径…" TextChanged="FilterMaps"
                AutomationProperties.Name="搜索地图" Margin="0,0,0,6"/>
-      <TextBlock x:Name="MapCount" DockPanel.Dock="Bottom" Foreground="{StaticResource Muted}" Margin="0,6,0,0"/>
-      <DataGrid x:Name="MapList" RowHeight="32" MinColumnWidth="0" SelectionMode="Single" SelectionChanged="SelectMap"
-                ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="地图目录">
-        <DataGrid.Columns>
-          <DataGridTextColumn Header="区域 ID" Binding="{Binding TerritoryId}" Width="79"/>
-          <DataGridTemplateColumn Header="地名" Width="*">
-            <DataGridTemplateColumn.CellTemplate>
-              <DataTemplate>
-                <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Bg}"/>
-              </DataTemplate>
-            </DataGridTemplateColumn.CellTemplate>
-          </DataGridTemplateColumn>
-        </DataGrid.Columns>
-      </DataGrid>
+      <Border Style="{StaticResource RoundedPreviewFrame}">
+        <DataGrid x:Name="MapList" BorderThickness="0" RowHeight="32" MinColumnWidth="0" SelectionMode="Single" SelectionChanged="SelectMap"
+                  ScrollViewer.HorizontalScrollBarVisibility="Disabled" AutomationProperties.Name="地图目录">
+          <DataGrid.Columns>
+            <DataGridTextColumn Header="区域 ID" Binding="{Binding TerritoryId}" Width="79"/>
+            <DataGridTemplateColumn Header="地名" Width="*">
+              <DataGridTemplateColumn.CellTemplate>
+                <DataTemplate>
+                  <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip="{Binding Bg}"/>
+                </DataTemplate>
+              </DataGridTemplateColumn.CellTemplate>
+            </DataGridTemplateColumn>
+          </DataGrid.Columns>
+        </DataGrid>
+      </Border>
     </DockPanel>
+    <TextBlock x:Name="MapCount" Grid.Row="1" Foreground="{StaticResource Muted}" Margin="0,6,0,0"
+               Visibility="{Binding Visibility, ElementName=MapBrowserPanel}"
+               TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
     <GridSplitter x:Name="MapBrowserDivider" Grid.Column="1" HorizontalAlignment="Stretch" Background="Transparent" ResizeBehavior="PreviousAndNext"
                   AutomationProperties.Name="调整地图目录宽度"/>
-    <Grid Grid.Column="2">
+    <Grid Grid.Column="2" Grid.RowSpan="2">
       <Grid.RowDefinitions>
         <RowDefinition Height="Auto"/>
         <RowDefinition Height="*"/>
-        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto" SharedSizeGroup="BrowserFooter"/>
       </Grid.RowDefinitions>
       <DockPanel Margin="0,0,0,6">
         <StackPanel DockPanel.Dock="Right" Orientation="Horizontal">
           <Button x:Name="GoToStartButton" Content="跳到起点" Click="GoToStart" Visibility="Collapsed" Padding="9,4" Margin="8,0,0,0"/>
           <Button x:Name="ResetCameraButton" Content="地图总览" Click="ResetView" IsEnabled="False" Padding="9,4" Margin="8,0,0,0" ToolTip="恢复场景的默认取景"/>
           <Button x:Name="ResetNearCameraButton" Content="距离 20" Click="ResetNearView" IsEnabled="False" Padding="9,4" Margin="6,0,0,0" ToolTip="将镜头放在当前旋转中心外 20 个世界单位，并朝向旋转中心"/>
+          <Button x:Name="CancelButton" Content="取消" Click="CancelPreview" Visibility="Collapsed" Padding="7,3" Margin="8,0,0,0"/>
+          <Button x:Name="RetryButton" Content="重新加载" Click="RetryPreview" Visibility="Collapsed" Padding="7,3" Margin="8,0,0,0"/>
         </StackPanel>
-        <StackPanel Orientation="Horizontal">
+        <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
           <RadioButton x:Name="SceneMode" Content="3D 场景" IsChecked="True" GroupName="MapMode" Checked="ChangeMode" VerticalAlignment="Center" Margin="0,0,14,0"/>
           <RadioButton x:Name="ImageMode" Content="游戏地图" GroupName="MapMode" Checked="ChangeMode" VerticalAlignment="Center" IsEnabled="False"/>
         </StackPanel>
+        <TextBlock x:Name="MapStatus" Foreground="{StaticResource Muted}" Margin="10,0,0,0" VerticalAlignment="Center"
+                   TextTrimming="CharacterEllipsis" AutomationProperties.LiveSetting="Polite"/>
       </DockPanel>
       <Border x:Name="MapSurface" Grid.Row="1" Background="#1E2938" CornerRadius="6" ClipToBounds="True" Focusable="True"
-              AutomationProperties.Name="3D 地图视口">
-        <Grid ClipToBounds="True">
+              FocusVisualStyle="{x:Null}" AutomationProperties.Name="3D 地图视口">
+        <Grid ClipToBounds="True" SizeChanged="ResizeMapScene">
+          <Viewport3D x:Name="EnvironmentSkyViewport" IsHitTestVisible="False" Visibility="Collapsed">
+            <Viewport3D.Camera>
+              <PerspectiveCamera Position="0,0,0" LookDirection="{Binding LookDirection, ElementName=MapCamera}"
+                                 UpDirection="{Binding UpDirection, ElementName=MapCamera}" FieldOfView="{Binding FieldOfView, ElementName=MapCamera}" NearPlaneDistance="0.1" FarPlaneDistance="30"/>
+            </Viewport3D.Camera>
+            <ModelVisual3D x:Name="EnvironmentSkyVisual"/>
+          </Viewport3D>
           <Viewport3D x:Name="MapViewport" IsHitTestVisible="False" ClipToBounds="False" RenderOptions.EdgeMode="Aliased">
             <Viewport3D.Camera>
               <PerspectiveCamera x:Name="MapCamera" UpDirection="0,1,0" FieldOfView="55"/>
@@ -59,7 +99,7 @@
               <ModelVisual3D.Content>
                 <Model3DGroup>
                   <AmbientLight Color="#9FA8B4"/>
-                  <DirectionalLight Color="#D7D8D2" Direction="-0.6,-1,0.3"/>
+                  <DirectionalLight x:Name="EnvironmentSunlight" Color="#D7D8D2" Direction="-0.6,-1,0.3"/>
                   <DirectionalLight Color="#495965" Direction="0.6,-0.15,-0.6"/>
                 </Model3DGroup>
               </ModelVisual3D.Content>
@@ -72,19 +112,64 @@
                      IsHitTestVisible="False" VerticalAlignment="Bottom" Foreground="#E1EAF6" Margin="10,6" TextWrapping="Wrap"/>
         </Grid>
       </Border>
-      <local:TexturePreview Grid.Row="1" x:Name="MapImage" Visibility="Collapsed"/>
-      <DockPanel Grid.Row="2" Margin="0,6,0,0">
-        <Button x:Name="CancelButton" DockPanel.Dock="Right" Content="取消" Click="CancelPreview" Visibility="Collapsed" Padding="7,3" Margin="8,0,0,0"/>
-        <Button x:Name="RetryButton" DockPanel.Dock="Right" Content="重新加载" Click="RetryPreview" Visibility="Collapsed" Padding="7,3" Margin="8,0,0,0"/>
-        <TextBlock x:Name="MapStatus" TextWrapping="Wrap" Foreground="{StaticResource Muted}" AutomationProperties.LiveSetting="Polite"/>
-      </DockPanel>
+      <local:TexturePreview Grid.Row="1" Grid.RowSpan="2" x:Name="MapImage" Visibility="Collapsed"/>
     </Grid>
     <GridSplitter Grid.Column="3" HorizontalAlignment="Stretch" Background="Transparent" ResizeBehavior="PreviousAndNext"
                   AutomationProperties.Name="调整地图详情宽度"/>
-    <Border Grid.Column="4" BorderBrush="{StaticResource Border}" BorderThickness="1" CornerRadius="6" Background="White">
-      <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+    <Border Grid.Column="4" BorderBrush="{StaticResource Border}" BorderThickness="1" CornerRadius="6" Background="{StaticResource WorkspaceSurface}">
+      <ScrollViewer x:Name="MapDetailsScroll" Style="{StaticResource OverlayDetailScroll}">
         <StackPanel Margin="12">
           <TextBlock x:Name="MapName" Text="区域信息" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap"/>
+          <ItemsControl x:Name="MapSummary" Margin="0,7,0,0">
+            <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="3"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+              <DataTemplate>
+                <Button Style="{StaticResource MapFieldLink}" Content="{Binding}" Click="OpenMapField" HorizontalAlignment="Left"
+                        IsEnabled="{Binding HasLink}"/>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+          <Button x:Name="MapContentLink" Style="{StaticResource MapFieldLink}" Click="OpenMapField" HorizontalAlignment="Left"
+                  Margin="0,4,0,0" Visibility="Collapsed"/>
+          <StackPanel x:Name="EnvironmentControls" Margin="0,10,0,4" Visibility="Collapsed">
+            <TextBlock Text="天气与时间" FontWeight="SemiBold"/>
+            <Grid Margin="0,6,0,0">
+              <Grid.ColumnDefinitions><ColumnDefinition Width="Auto"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
+              <Button x:Name="PreviousWeatherButton" Style="{StaticResource PreviousItemButton}" Margin="0,0,4,0" IsEnabled="False"
+                      Click="PreviousWeather" ToolTip="上一种天气" AutomationProperties.Name="上一种天气"/>
+              <ComboBox x:Name="WeatherChoice" local:ComboStep.HasExternalButtons="True" Grid.Column="1" SelectionChanged="EnvironmentSelectionChanged"
+                        PreviewMouseRightButtonUp="OpenWeatherTableOnRightClick" PreviewKeyDown="WeatherChoiceKeyDown"
+                        ToolTip="右键跳转到天气数据表" AutomationProperties.Name="预览天气">
+                <ComboBox.ItemContainerStyle>
+                  <Style TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
+                    <EventSetter Event="PreviewMouseRightButtonUp" Handler="OpenWeatherTableOnRightClick"/>
+                    <Setter Property="ToolTip" Value="右键跳转到此天气的数据表"/>
+                  </Style>
+                </ComboBox.ItemContainerStyle>
+                <ComboBox.ItemTemplate>
+                  <DataTemplate>
+                    <DockPanel>
+                      <Image DockPanel.Dock="Left" Source="{Binding Icon}" Width="16" Height="16" Margin="0,0,4,0"/>
+                      <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                    </DockPanel>
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
+              <Button x:Name="NextWeatherButton" Grid.Column="2" Style="{StaticResource NextItemButton}" Margin="4,0,0,0" IsEnabled="False"
+                      Click="NextWeather" ToolTip="下一种天气" AutomationProperties.Name="下一种天气"/>
+            </Grid>
+            <TextBlock x:Name="EnvironmentTimeLabel" Margin="0,6,0,0"/>
+            <Slider x:Name="EnvironmentTime" Minimum="0" Maximum="24" Value="12" TickFrequency="1" ValueChanged="EnvironmentTimeChanged" AutomationProperties.Name="环境时间"/>
+            <CheckBox x:Name="ExperimentalSky" Content="实验性游戏天空纹理" IsChecked="True" Margin="0,5,0,4"
+                      Checked="ShowExperimentalSkyChanged" Unchecked="ShowExperimentalSkyChanged"
+                      ToolTip="读取本地天空体积纹理。天气与纹理的对应关系和采样参数仍在验证。"/>
+            <TextBlock x:Name="EnvironmentHint" Foreground="{StaticResource Muted}" TextWrapping="Wrap"/>
+          </StackPanel>
+          <StackPanel x:Name="MapEffectControls" Visibility="Collapsed" Margin="0,10,0,4">
+            <TextBlock Text="MapEffect 资源绑定" FontWeight="SemiBold"/>
+            <ComboBox x:Name="MapEffectChoice" DisplayMemberPath="Label" SelectionChanged="MapEffectSelectionChanged" Margin="0,6,0,6" AutomationProperties.Name="MapEffect 目标"/>
+            <TextBox x:Name="MapEffectDetail" IsReadOnly="True" TextWrapping="Wrap" BorderThickness="0" Background="Transparent" Padding="0" AutomationProperties.Name="MapEffect 绑定详情"/>
+          </StackPanel>
           <ItemsControl x:Name="MapFields" Margin="0,8,0,0">
             <ItemsControl.ItemTemplate>
               <DataTemplate>
@@ -96,18 +181,17 @@
               </DataTemplate>
             </ItemsControl.ItemTemplate>
           </ItemsControl>
-          <WrapPanel x:Name="MapLinks"/>
           <Expander x:Name="StartPositionControls" Header="预览起点" Margin="0,9,0,0" Visibility="Collapsed">
             <StackPanel Margin="0,6,0,0">
               <TextBlock x:Name="SceneEntranceHint" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,0,0,6" Visibility="Collapsed"/>
               <TextBox x:Name="StartPositionInput" Tag="世界坐标 X, Y, Z" AutomationProperties.Name="预览起点坐标"
                        ToolTip="输入当前区域的世界坐标，按 X、Y、Z 排列。Y 是高度。"/>
-              <WrapPanel Margin="0,6,0,0">
-                <Button Content="保存起点" Click="SaveStartPosition" Padding="6,3" Margin="0,0,5,5"/>
-                <Button x:Name="CopyCurrentPositionButton" Content="取当前视角" Click="UseCurrentPosition" IsEnabled="False"
-                        ToolTip="记录当前镜头的位置和朝向，点击保存起点后生效。" Padding="6,3" Margin="0,0,5,5"/>
-                <Button x:Name="ClearStartPositionButton" Content="清除起点" Click="ClearStartPosition" IsEnabled="False" Padding="6,3" Margin="0,0,5,5"/>
-              </WrapPanel>
+              <UniformGrid Columns="3" Margin="0,6,0,5">
+                <Button x:Name="CopyCurrentPositionButton" Content="当前视角" Click="UseCurrentPosition" IsEnabled="False"
+                        ToolTip="记录当前镜头的位置和朝向，点击保存起点后生效。" Padding="2,3" Margin="0,0,4,0"/>
+                <Button Content="保存起点" Click="SaveStartPosition" Padding="2,3" Margin="0,0,4,0"/>
+                <Button x:Name="ClearStartPositionButton" Content="撤销保存" Click="ClearStartPosition" IsEnabled="False" Padding="2,3" Margin="0"/>
+              </UniformGrid>
               <TextBlock x:Name="StartPositionStatus" Foreground="{StaticResource Muted}" TextWrapping="Wrap" AutomationProperties.LiveSetting="Polite"/>
             </StackPanel>
           </Expander>

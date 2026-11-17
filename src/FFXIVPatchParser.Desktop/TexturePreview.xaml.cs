@@ -1,8 +1,10 @@
+using System.ComponentModel;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Microsoft.Win32;
@@ -17,6 +19,7 @@ public partial class TexturePreview : UserControl
     private string? details;
     private string? exportName;
     private bool fit;
+    private bool copyingPath;
     private double zoom = 1;
     private Point origin;
     private Point? dragPosition;
@@ -34,7 +37,7 @@ public partial class TexturePreview : UserControl
         PreviewImage.Width = bitmap?.PixelWidth ?? 0;
         PreviewImage.Height = bitmap?.PixelHeight ?? 0;
         Actions.IsEnabled = bitmap is not null;
-        CopyPathButton.IsEnabled = !string.IsNullOrWhiteSpace(virtualPath);
+        CopyPathButton.IsEnabled = !copyingPath && !string.IsNullOrWhiteSpace(virtualPath);
         Viewport.Cursor = bitmap is null ? Cursors.Arrow : Cursors.SizeAll;
         SetStatus(null);
         ResetView(fitToWindow: false);
@@ -64,6 +67,7 @@ public partial class TexturePreview : UserControl
 
     private void ResizeViewport(object sender, SizeChangedEventArgs e)
     {
+        Viewport.Clip = new RectangleGeometry(new Rect(e.NewSize), 5, 5);
         if (bitmap is null) return;
         if (fit)
         {
@@ -155,57 +159,41 @@ public partial class TexturePreview : UserControl
         };
     }
 
-    private void CopyPath(object sender, RoutedEventArgs e)
+    private async void CopyPath(object sender, RoutedEventArgs e)
     {
-        if (string.IsNullOrWhiteSpace(virtualPath)) return;
+        if (copyingPath || string.IsNullOrWhiteSpace(virtualPath) || PresentationSource.FromVisual(this) is not HwndSource source) return;
+        var path = virtualPath;
+        copyingPath = true;
+        CopyPathButton.IsEnabled = false;
         try
         {
-            Clipboard.SetText(virtualPath);
-            SetStatus("已复制资源路径", virtualPath);
+            var copied = await ClipboardText.TryCopyAsync(source.Handle, path);
+            if (path == virtualPath)
+                MainWindow.Notify(this, copied ? "已复制资源路径" : "剪贴板正被占用，请稍后重试。");
         }
-        catch (ExternalException ex)
+        catch (Win32Exception ex)
         {
-            SetStatus("无法复制资源路径", ex.Message, error: true);
+            if (path == virtualPath) MainWindow.Notify(this, "无法复制资源路径 · " + ex.Message);
+        }
+        finally
+        {
+            copyingPath = false;
+            CopyPathButton.IsEnabled = !string.IsNullOrWhiteSpace(virtualPath);
         }
     }
 
-    private async void SavePng(object sender, RoutedEventArgs e)
+    private async void SavePng(object sender, RoutedEventArgs e) => await SavePngAsync();
+
+    internal async Task SavePngAsync()
     {
         if (bitmap is not { } image) return;
         SavePngButton.IsEnabled = false;
         SetStatus(null);
         try
         {
-            var exportDirectory = Path.Combine(Workspace.Temp, "exports");
-            var dialog = new SaveFileDialog
-            {
-                Title = "保存图片为 PNG",
-                Filter = "PNG 图片 (*.png)|*.png",
-                DefaultExt = ".png",
-                AddExtension = true,
-                FileName = SuggestedFileName(),
-                InitialDirectory = exportDirectory
-            };
-            try
-            {
-                Directory.CreateDirectory(exportDirectory);
-            }
-            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-            {
-                dialog.InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
-            }
-
-            var owner = Window.GetWindow(this);
-            if ((owner is null ? dialog.ShowDialog() : dialog.ShowDialog(owner)) != true) return;
-
-            var pngSource = !image.IsFrozen && image.CanFreeze ? (BitmapSource)image.GetAsFrozen() : image;
-            var path = dialog.FileName;
-            if (pngSource.IsFrozen)
-                await Task.Run(() => WritePng(pngSource, path));
-            else
-                WritePng(pngSource, path);
-
-            if (ReferenceEquals(image, bitmap)) SetStatus($"已保存 {Path.GetFileName(path)}", path);
+            var saved = await ExportPngAsync(image, exportName ?? virtualPath ?? "texture", Window.GetWindow(this));
+            if (saved is not null && ReferenceEquals(image, bitmap))
+                SetStatus($"已保存 {Path.GetFileName(saved)}", saved);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ArgumentException
             or InvalidOperationException or NotSupportedException or ExternalException)
@@ -218,9 +206,41 @@ public partial class TexturePreview : UserControl
         }
     }
 
-    private string SuggestedFileName()
+    internal static async Task<string?> ExportPngAsync(BitmapSource image, string suggestedPath, Window? owner)
     {
-        var path = exportName ?? virtualPath ?? "texture";
+        var exportDirectory = Path.Combine(Workspace.Temp, "exports");
+        var dialog = new SaveFileDialog
+        {
+            Title = "导出为 PNG",
+            Filter = "PNG 图片 (*.png)|*.png",
+            DefaultExt = ".png",
+            AddExtension = true,
+            FileName = SuggestedFileName(suggestedPath),
+            InitialDirectory = exportDirectory
+        };
+        try
+        {
+            Directory.CreateDirectory(exportDirectory);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            dialog.InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
+        }
+
+        if ((owner is null ? dialog.ShowDialog() : dialog.ShowDialog(owner)) != true) return null;
+
+        var pngSource = !image.IsFrozen && image.CanFreeze ? (BitmapSource)image.GetAsFrozen() : image;
+        var path = dialog.FileName;
+        if (pngSource.IsFrozen)
+            await Task.Run(() => WritePng(pngSource, path));
+        else
+            WritePng(pngSource, path);
+
+        return path;
+    }
+
+    private static string SuggestedFileName(string path)
+    {
         var separator = path.LastIndexOfAny(['/', '\\', '#']);
         var fileName = Path.GetFileNameWithoutExtension(path[(separator + 1)..]);
         var invalid = Path.GetInvalidFileNameChars();

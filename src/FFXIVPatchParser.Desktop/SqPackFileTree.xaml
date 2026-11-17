@@ -2,17 +2,26 @@
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              IsVisibleChanged="VisibilityChanged">
-  <DockPanel>
-    <TextBox x:Name="FileSearch" DockPanel.Dock="Top" Style="{StaticResource SearchTextBox}"
+  <Grid>
+    <Grid.RowDefinitions>
+      <RowDefinition Height="Auto" SharedSizeGroup="FileHeader"/>
+      <RowDefinition Height="*"/>
+      <RowDefinition Height="Auto" SharedSizeGroup="BrowserFooter"/>
+    </Grid.RowDefinitions>
+    <TextBox x:Name="FileSearch" Style="{StaticResource SearchTextBox}"
              Tag="搜索路径、哈希或容器…" AutomationProperties.Name="搜索 SqPack 文件"
-             TextChanged="SearchChanged" Margin="0,0,0,6" IsEnabled="False"/>
-    <DockPanel DockPanel.Dock="Bottom" Margin="0,6,0,0">
+             TextChanged="SearchChanged" Margin="0,0,0,6" VerticalAlignment="Top" IsEnabled="False"/>
+    <DockPanel Grid.Row="2" Margin="0,6,0,0">
+      <Button x:Name="PathCoverageButton" DockPanel.Dock="Right" Content="路径补全…" Margin="6,0,0,0"
+              Click="OpenPathCoverage" IsEnabled="False" Padding="7,2" FontSize="12" VerticalAlignment="Center"/>
       <Button x:Name="RetryButton" DockPanel.Dock="Right" Content="重试" Margin="6,0,0,0"
               Click="Retry" Visibility="Collapsed" Padding="7,3"/>
       <TextBlock x:Name="FileCount" Text="请在设置中连接游戏目录" Foreground="{StaticResource Muted}"
-                 TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
+                 VerticalAlignment="Center" TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
     </DockPanel>
-    <TreeView x:Name="DirectoryTree" Style="{StaticResource CompactPathTree}" SelectedItemChanged="SelectFile"
+    <Popup x:Name="CoveragePopup" PlacementTarget="{Binding ElementName=PathCoverageButton}" Placement="Top"
+           VerticalOffset="-2" AllowsTransparency="True" Opened="CoverageOpened" Closed="CoverageClosed"/>
+    <TreeView Grid.Row="1" x:Name="DirectoryTree" Style="{StaticResource CompactPathTree}" SelectedItemChanged="SelectFile"
               AutomationProperties.Name="SqPack 文件目录">
       <TreeView.ItemContainerStyle>
         <Style TargetType="TreeViewItem" BasedOn="{StaticResource CompactPathTreeItem}">
@@ -25,5 +34,5 @@
         </HierarchicalDataTemplate>
       </TreeView.ItemTemplate>
     </TreeView>
-  </DockPanel>
+  </Grid>
 </UserControl>

@@ -1,0 +1,26 @@
+{
+  "sheet": "Map",
+  "schemaHash": "4F594AB55D850A1DB2C51BC5CD22E4057F9C06F8292F748A94421E25BF340E31",
+  "definitions": [
+    {
+      "index": 6,
+      "name": "Id"
+    },
+    {
+      "index": 10,
+      "name": "PlaceNameRegion",
+      "converter": {
+        "type": "link",
+        "target": "PlaceName"
+      }
+    },
+    {
+      "index": 11,
+      "name": "PlaceName",
+      "converter": {
+        "type": "link",
+        "target": "PlaceName"
+      }
+    }
+  ]
+}

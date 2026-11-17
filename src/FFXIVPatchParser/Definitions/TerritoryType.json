@@ -1,0 +1,70 @@
+{
+  "sheet": "TerritoryType",
+  "schemaHash": "95A17071A1D163059188FE3A93532BB7E202B2F982EA327CD41C1AA706F47C4C",
+  "definitions": [
+    {
+      "index": 0,
+      "name": "Name"
+    },
+    {
+      "index": 1,
+      "name": "Bg"
+    },
+    {
+      "index": 3,
+      "name": "PlaceNameRegion",
+      "converter": {
+        "type": "link",
+        "target": "PlaceName"
+      }
+    },
+    {
+      "index": 4,
+      "name": "PlaceNameZone",
+      "converter": {
+        "type": "link",
+        "target": "PlaceName"
+      }
+    },
+    {
+      "index": 5,
+      "name": "PlaceName",
+      "converter": {
+        "type": "link",
+        "target": "PlaceName"
+      }
+    },
+    {
+      "index": 6,
+      "name": "Map",
+      "converter": {
+        "type": "link",
+        "target": "Map"
+      }
+    },
+    {
+      "index": 9,
+      "name": "TerritoryIntendedUse",
+      "converter": {
+        "type": "link",
+        "target": "TerritoryIntendedUse"
+      }
+    },
+    {
+      "index": 10,
+      "name": "ContentFinderCondition",
+      "converter": {
+        "type": "link",
+        "target": "ContentFinderCondition"
+      }
+    },
+    {
+      "index": 23,
+      "name": "QuestBattle",
+      "converter": {
+        "type": "link",
+        "target": "QuestBattle"
+      }
+    }
+  ]
+}

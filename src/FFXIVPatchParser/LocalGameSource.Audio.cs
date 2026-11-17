@@ -7,27 +7,94 @@ using Lumina.Data;
 using Lumina.Data.Files;
 using Lumina.Data.Parsing.Scd;
 using Lumina.Data.Structs;
+using Lumina.Data.Structs.Excel;
 using Lumina.Excel;
 using Lumina.Text.ReadOnly;
 
 namespace FFXIVPatchParser;
 
 public sealed record SqPackAudioLocation(string Path, string Container, long Offset, long End);
+public sealed record AudioLoop(long StartSample, long EndSample);
 public sealed record GameAudio(string Path, int TrackIndex, int TrackCount, string Codec, uint Channels, uint SampleRate,
-    string Extension, byte[] Data);
+    string Extension, byte[] Data, AudioLoop? Loop = null);
 
 public sealed partial class LocalGameSource
 {
     private const AudioFormat Pcm16LittleEndian = (AudioFormat)1;
     private const string SampleAudioPath = "music/ex2/bgm_ex2_system_title.scd";
+    private IReadOnlyList<(uint Id, string Path)>? bgmPaths;
     private Dictionary<ulong, string>? musicNames;
     private readonly Dictionary<string, IReadOnlyList<SqPackAudioLocation>> audioLocations = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, (SqPack Pack, long Offset)> audioAddresses = new(StringComparer.OrdinalIgnoreCase);
+
+    public static bool BgmPathMatches(string bgmPath, string resourcePath)
+    {
+        if (bgmPath.Equals(resourcePath, StringComparison.OrdinalIgnoreCase)) return true;
+        if (!resourcePath.StartsWith("sqpack:", StringComparison.OrdinalIgnoreCase) || !resourcePath.EndsWith(".scd", StringComparison.OrdinalIgnoreCase)) return false;
+        var hashStart = resourcePath.LastIndexOf('#');
+        if (hashStart < 0 || !ulong.TryParse(resourcePath.AsSpan(hashStart + 1, resourcePath.Length - hashStart - 5),
+            NumberStyles.AllowHexSpecifier, CultureInfo.InvariantCulture, out var hash)) return false;
+        if (GameData.ParseFilePath(bgmPath) is not { } parsed || parsed.IndexHash != hash) return false;
+        var category = Array.IndexOf(FileSystemCategories, parsed.Category);
+        return category >= 0 && resourcePath.StartsWith($"sqpack:{parsed.Repository}/{category:x2}", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public IReadOnlyList<(uint Id, string Path)> ListBgmPaths(CancellationToken token = default)
+    {
+        lock (gate)
+        {
+            token.ThrowIfCancellationRequested();
+            if (bgmPaths is not null) return bgmPaths;
+            var result = new List<(uint, string)>();
+            if (!SheetNames.Contains("BGM")) return result;
+            var (header, language) = ReadSheetHeader("BGM");
+            foreach (var row in game.Excel.GetSheet<RawRow>(language, "BGM"))
+            {
+                token.ThrowIfCancellationRequested();
+                for (var column = 0; column < header.ColumnDefinitions.Length; column++)
+                {
+                    if (row.ReadColumn(column) is not ReadOnlySeString text) continue;
+                    if (NormalizeFileSystemPath(text.ExtractText()) is { } path &&
+                        path.EndsWith(".scd", StringComparison.Ordinal) && game.FileExists(path))
+                        result.Add((row.RowId, path));
+                }
+            }
+            return bgmPaths = result.AsReadOnly();
+        }
+    }
 
     public IReadOnlyList<string> ListNamedAudioPaths(CancellationToken token = default)
     {
         lock (gate)
             return GetMusicNames(token).Values.Order(StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
+    public IReadOnlyList<(uint Id, string Path, string Title)> ListOrchestrionTitles(CancellationToken token = default)
+    {
+        lock (gate)
+        {
+            if (!SheetNames.Contains("Orchestrion") || !SheetNames.Contains("OrchestrionPath")) return [];
+            var (titleHeader, titleLanguage) = ReadSheetHeader("Orchestrion");
+            var (pathHeader, pathLanguage) = ReadSheetHeader("OrchestrionPath");
+            if (titleHeader.Header.Variant != ExcelVariant.Default ||
+                !titleHeader.ColumnDefinitions.Select(c => (c.Type, c.Offset)).SequenceEqual(
+                    [(ExcelColumnDataType.String, (ushort)0), (ExcelColumnDataType.String, (ushort)4)]) ||
+                pathHeader.Header.Variant != ExcelVariant.Default ||
+                !pathHeader.ColumnDefinitions.Select(c => (c.Type, c.Offset)).SequenceEqual(
+                    [(ExcelColumnDataType.String, (ushort)0)])) return [];
+            var titles = game.Excel.GetSheet<RawRow>(titleLanguage, "Orchestrion");
+            var result = new List<(uint, string, string)>();
+            foreach (var row in game.Excel.GetSheet<RawRow>(pathLanguage, "OrchestrionPath"))
+            {
+                token.ThrowIfCancellationRequested();
+                var path = NormalizeFileSystemPath(((ReadOnlySeString)row.ReadColumn(0)).ExtractText());
+                if (path?.EndsWith(".scd", StringComparison.Ordinal) != true ||
+                    !titles.TryGetRow(row.RowId, out var named) || !game.FileExists(path)) continue;
+                var title = ((ReadOnlySeString)named.ReadColumn(0)).ExtractText().Trim();
+                if (title.Length > 0) result.Add((row.RowId, path, title));
+            }
+            return result;
+        }
     }
 
     public IReadOnlyList<SqPackAudioLocation> ListAudioLocations(CancellationToken token = default, IReadOnlySet<string>? containers = null,
@@ -115,18 +182,90 @@ public sealed partial class LocalGameSource
                 switch (description.Format)
                 {
                     case AudioFormat.OggVorbis when audio.AudioData.AsSpan().StartsWith("OggS"u8):
-                        return new(path, index, count, "Ogg Vorbis", description.Channel, description.Rate, ".ogg", audio.AudioData);
+                        return new(path, index, count, "Ogg Vorbis", description.Channel, description.Rate, ".ogg", audio.AudioData, ReadVorbisLoop(audio.AudioData));
                     case AudioFormat.Mp3:
                         return new(path, index, count, "MP3", description.Channel, description.Rate, ".mp3", audio.AudioData);
                     case AudioFormat.MsAdpcm when audio.AudioDataHeader is AdpcmWaveFormat wave:
-                        return new(path, index, count, "MS ADPCM", description.Channel, description.Rate, ".wav", WrapAdpcm(wave, audio.AudioData));
+                        var adpcm = WrapAdpcm(wave, audio.AudioData);
+                        long AdpcmSample(long bytes)
+                        {
+                            var remainder = bytes % wave.BlockAlign;
+                            return bytes / wave.BlockAlign * wave.SamplesPerBlock +
+                                (remainder >= 7 * wave.Channels ? 2 + (remainder - 7 * wave.Channels) * 2 / wave.Channels : 0);
+                        }
+                        return new(path, index, count, "MS ADPCM", description.Channel, description.Rate, ".wav", adpcm,
+                            description.LoopEnd <= audio.AudioData.Length ? ValidLoop(AdpcmSample(description.LoopStart), AdpcmSample(description.LoopEnd)) : null);
                     case Pcm16LittleEndian:
-                        return new(path, index, count, "PCM 16-bit", description.Channel, description.Rate, ".wav", WrapPcm(description, audio.AudioData));
+                        var pcm = WrapPcm(description, audio.AudioData);
+                        var align = 2 * description.Channel;
+                        return new(path, index, count, "PCM 16-bit", description.Channel, description.Rate, ".wav", pcm,
+                            description.LoopEnd <= audio.AudioData.Length ? ValidLoop(description.LoopStart / align, description.LoopEnd / align) : null);
                 }
                 if (trackIndex is not null) throw new NotSupportedException($"无法预览此音轨的编码（{description.Format}）。");
             }
             throw new NotSupportedException("此 SCD 没有可预览的音轨。");
         }
+    }
+
+    private static AudioLoop? ValidLoop(long start, long end) => start >= 0 && end > start ? new(start, end) : null;
+
+    private static AudioLoop? ReadVorbisLoop(ReadOnlySpan<byte> ogg)
+    {
+        // Vorbis 循环标签的单位是采样帧，SCD 头中的 Ogg 循环字段则是字节位置。
+        using var packet = new MemoryStream();
+        var packets = 0;
+        while (ogg.Length >= 27 && ogg.StartsWith("OggS"u8) && packets < 2)
+        {
+            int count = ogg[26], offset = 27 + count;
+            if (ogg.Length < offset) return null;
+            foreach (var size in ogg.Slice(27, count))
+            {
+                if (size > ogg.Length - offset || packet.Length + size > 1024 * 1024) return null;
+                packet.Write(ogg.Slice(offset, size));
+                offset += size;
+                if (size == 255) continue;
+                if (++packets == 2) return ParseVorbisComments(packet.GetBuffer().AsSpan(0, (int)packet.Length));
+                packet.SetLength(0);
+            }
+            ogg = ogg[offset..];
+        }
+        return null;
+    }
+
+    private static AudioLoop? ParseVorbisComments(ReadOnlySpan<byte> packet)
+    {
+        if (!packet.StartsWith("\x03vorbis"u8)) return null;
+        packet = packet[7..];
+        if (!ReadVorbisString(ref packet, out _) || packet.Length < 4) return null;
+        var count = BinaryPrimitives.ReadUInt32LittleEndian(packet);
+        packet = packet[4..];
+        long? start = null, end = null, length = null;
+        for (uint i = 0; i < count && ReadVorbisString(ref packet, out var entry); i++)
+        {
+            var comment = System.Text.Encoding.UTF8.GetString(entry);
+            var eq = comment.IndexOf('=');
+            if (eq < 0 || !long.TryParse(comment.AsSpan(eq + 1), NumberStyles.None, CultureInfo.InvariantCulture, out var value)) continue;
+            switch (comment[..eq].ToUpperInvariant())
+            {
+                case "LOOPSTART": start = value; break;
+                case "LOOPEND": end = value; break;
+                case "LOOPLENGTH": length = value; break;
+            }
+        }
+        if (start is not long first) return null;
+        if (end is null && length is long frames && frames <= long.MaxValue - first) end = first + frames;
+        return end is long last ? ValidLoop(first, last) : null;
+    }
+
+    private static bool ReadVorbisString(ref ReadOnlySpan<byte> packet, out ReadOnlySpan<byte> value)
+    {
+        value = default;
+        if (packet.Length < 4) return false;
+        var length = BinaryPrimitives.ReadUInt32LittleEndian(packet);
+        if (length > packet.Length - 4) return false;
+        value = packet.Slice(4, (int)length);
+        packet = packet[(4 + (int)length)..];
+        return true;
     }
 
     private (SqPack Pack, long Offset) ResolveAudioAddress(string path, CancellationToken token)
@@ -167,22 +306,13 @@ public sealed partial class LocalGameSource
                 result.TryAdd(parsed.IndexHash, path);
         }
         Add(SampleAudioPath);
-        if (SheetNames.Contains("BGM"))
+        try
         {
-            try
-            {
-                var (header, language) = ReadSheetHeader("BGM");
-                foreach (var row in game.Excel.GetSheet<RawRow>(language, "BGM"))
-                {
-                    token.ThrowIfCancellationRequested();
-                    for (var column = 0; column < header.ColumnDefinitions.Length; column++)
-                        if (row.ReadColumn(column) is ReadOnlySeString text) Add(text.ExtractText());
-                }
-            }
-            catch (Exception ex) when (ex is IOException or InvalidDataException or NotSupportedException or KeyNotFoundException)
-            {
-                // 安装目录缺少完整 BGM 表时，仍可手动扫描 SCD。
-            }
+            foreach (var (_, path) in ListBgmPaths(token)) Add(path);
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or NotSupportedException or KeyNotFoundException)
+        {
+            // 安装目录缺少完整 BGM 表时，仍可手动扫描 SCD。
         }
         musicNames = result;
         return result;
@@ -195,6 +325,7 @@ public sealed partial class LocalGameSource
         using var reader = new BinaryReader(stream);
         var entries = new List<SqPackAudioLocation>();
         var addresses = new List<(string Path, long Offset)>();
+        var verifiedNames = GetFileSystemMediaPaths(container, ".scd", token);
         for (var i = 0; i < ordered.Length; i++)
         {
             token.ThrowIfCancellationRequested();
@@ -203,7 +334,7 @@ public sealed partial class LocalGameSource
             if (includeRange is not null && !includeRange(container, offset, end)) continue;
             if (!HasScdMagic(reader, offset, end)) continue;
             var hash = ordered[i].Value;
-            var path = knownNames.GetValueOrDefault(hash) ?? $"sqpack:{container}@{offset:x}#{hash:x16}.scd";
+            var path = verifiedNames.GetValueOrDefault((offset, hash)) ?? knownNames.GetValueOrDefault(hash) ?? $"sqpack:{container}@{offset:x}#{hash:x16}.scd";
             addresses.Add((path, offset));
             entries.Add(new(path, container, offset, end));
         }

@@ -6,6 +6,7 @@
   <ItemGroup Condition="'$(UseDalamudLibraries)' != 'true'">
     <PackageReference Include="Lumina" Version="7.7.2" />
   </ItemGroup>
+  <ItemGroup><EmbeddedResource Include="Definitions/*.json" /></ItemGroup>
   <ItemGroup Condition="'$(UseDalamudLibraries)' == 'true'">
     <DalamudLibrary Include="Lumina;BCnEncoder;CommunityToolkit.HighPerformance;Microsoft.Extensions.ObjectPool">
       <HintPath>$(DalamudLibPath)/%(Identity).dll</HintPath>

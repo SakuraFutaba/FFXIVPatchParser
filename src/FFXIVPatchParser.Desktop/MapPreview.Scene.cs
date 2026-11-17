@@ -28,6 +28,8 @@ public partial class MapPreview
     private async Task LoadSceneAsync(LocalGameSource game, NamedMapEntry entry, CancellationToken token)
     {
         displayedPath = entry.ScenePath;
+        await ShowEnvironmentAsync(game, entry, token);
+        await ShowMapEffectsAsync(game, entry, token);
         if (scenes.FirstOrDefault(cached => cached.Path == entry.ScenePath) is { } cached)
         {
             scenes.Remove(cached);
@@ -95,6 +97,37 @@ public partial class MapPreview
         if (scenes.Count > 2) scenes.RemoveLast();
     }
 
+    private async Task ShowEnvironmentAsync(LocalGameSource game, NamedMapEntry entry, CancellationToken token)
+    {
+        try
+        {
+            var (environment, timeline, textures, icons) = await Task.Run(() =>
+            {
+                var metadata = game.ReadTerritoryEnvironment(entry.ScenePath, token);
+                GameEnvironmentTimeline? lighting = null;
+                if (metadata.EnvironmentPaths.FirstOrDefault() is { } path)
+                {
+                    try { lighting = game.ReadEnvironmentTimeline(path, token); }
+                    catch (Exception ex) when (ex is IOException or InvalidDataException or NotSupportedException or OverflowException) { }
+                }
+                var sky = lighting == null ? [] : ReadSkyTextures(game, lighting, token);
+                return (metadata, lighting, sky, ReadWeatherIcons(game, metadata, token));
+            }, token);
+            token.ThrowIfCancellationRequested();
+            if (displayedPath != entry.ScenePath) return;
+            SetEnvironment(environment, timeline, textures, icons);
+            var fields = (MapFields.ItemsSource as IEnumerable<MapField> ?? []).Where(field =>
+                field.Label != "环境资源").ToList();
+            foreach (var path in environment.EnvironmentPaths) fields.Add(new("环境资源", path));
+            MapFields.ItemsSource = fields;
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or ArgumentException
+            or NotSupportedException or IndexOutOfRangeException or OverflowException)
+        {
+            // 环境解析尚未覆盖所有版本，静态场景仍可独立预览。
+        }
+    }
+
     private void ShowSceneGroup(Model3DGroup opaque, Model3DGroup transparent, Rect3D terrain)
     {
         var bounds = opaque.Bounds;
@@ -115,10 +148,11 @@ public partial class MapPreview
         CameraHelp.Visibility = Visibility.Visible;
         ResetCameraButton.IsEnabled = ResetNearCameraButton.IsEnabled = true;
         CopyCurrentPositionButton.IsEnabled = true;
-        if (suspendedCamera is { } view)
+        if (selectedMap is { } entry)
         {
-            suspendedCamera = null;
-            camera.RestoreView(view);
+            displayedCameraMap = CameraMapKey(entry);
+            if (mapCameraViews.TryGetValue(displayedCameraMap.Value, out var view)) camera.RestoreView(view);
+            else ApplyStartPosition();
         }
         else ApplyStartPosition();
         UpdateStartButton();

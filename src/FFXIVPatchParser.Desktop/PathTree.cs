@@ -54,7 +54,8 @@ public static class PathTree
     /// <summary>Builds an immutable hierarchy without allocating TreeViewItems. Filtered leaves retain and expand their ancestors.</summary>
     public static IReadOnlyList<PathTreeNode> Build<T>(IEnumerable<T> items, Func<T, string> pathSelector,
         string? filter = null, Func<T, string>? searchTextSelector = null, CancellationToken token = default,
-        IComparer<string>? labelComparer = null, Func<string, string>? displayPathSelector = null)
+        IComparer<string>? labelComparer = null, Func<string, string>? displayPathSelector = null,
+        Func<T, string?>? leafLabelSelector = null)
     {
         ArgumentNullException.ThrowIfNull(items);
         ArgumentNullException.ThrowIfNull(pathSelector);
@@ -82,7 +83,7 @@ public static class PathTree
                 branch = next;
             }
             branch.Leaves ??= [];
-            branch.Leaves.Add(new(original, segments[^1], item, [], false, false));
+            branch.Leaves.Add(new(original, leafLabelSelector?.Invoke(item) ?? segments[^1], item, [], false, false));
         }
         return Freeze(root, query.Length != 0, token, new NodeComparer(labelComparer ?? StringComparer.OrdinalIgnoreCase));
     }

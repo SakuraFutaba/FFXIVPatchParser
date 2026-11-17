@@ -18,8 +18,9 @@ internal sealed class SqPackFileTreeIndex
 
     public Folder Root { get; } = new("", "");
     public int NamedCount { get; private set; }
+    public (SqPackFileSystemEntry Entry, string Folder)? Selection { get; private set; }
 
-    public static SqPackFileTreeIndex Build(LocalGameSource source, CancellationToken token)
+    public static SqPackFileTreeIndex Build(LocalGameSource source, CancellationToken token, SqPackFileSystemEntry? selection = null)
     {
         var index = new SqPackFileTreeIndex();
         var folders = new Dictionary<string, Folder>(StringComparer.OrdinalIgnoreCase) { [""] = index.Root };
@@ -65,6 +66,9 @@ internal sealed class SqPackFileTreeIndex
                     }
                 }
                 folder.Files.Add(new(entries, i));
+                if (selection is { } selected && entry.Offset == selected.Offset && entry.Hash == selected.Hash &&
+                    entry.IsIndex2 == selected.IsIndex2 && entry.Container == selected.Container)
+                    index.Selection = (entry, folder.Path);
             }
         }
 

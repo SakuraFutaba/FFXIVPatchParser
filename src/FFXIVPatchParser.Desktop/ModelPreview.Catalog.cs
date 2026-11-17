@@ -2,6 +2,8 @@ using System.Globalization;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 
 namespace FFXIVPatchParser.Desktop;
 
@@ -17,7 +19,63 @@ public partial class ModelPreview
     private CancellationTokenSource? namedSelection;
     private NamedModelEntry? selectedNamedModel;
     private bool changingCatalogueMode;
+    private Window? catalogueOptionsHost;
     public event EventHandler<ModelTableLinkEventArgs>? RelatedTableRequested;
+
+    private void ToggleCatalogueOptions(object sender, RoutedEventArgs e)
+    {
+        if (CatalogueOptionsPopup.IsOpen) CloseCatalogueOptions();
+        else if (IsVisible && IsEnabled && ShowBrowser) CatalogueOptionsPopup.IsOpen = true;
+    }
+
+    private void CatalogueOptionsOpened(object? sender, EventArgs e)
+    {
+        if (Window.GetWindow(this) is { } owner)
+        {
+            catalogueOptionsHost = owner;
+            owner.PreviewMouseDown += DismissCatalogueOptionsOnOutsideClick;
+            owner.PreviewKeyDown += CatalogueOptionsKeyDown;
+            owner.Deactivated += DismissCatalogueOptions;
+            owner.LocationChanged += DismissCatalogueOptions;
+            owner.SizeChanged += DismissCatalogueOptions;
+        }
+        ModelMode.Focus();
+    }
+
+    private void CatalogueOptionsClosed(object? sender, EventArgs e)
+    {
+        ModelMode.IsDropDownOpen = false;
+        if (catalogueOptionsHost is not { } owner) return;
+        catalogueOptionsHost = null;
+        owner.PreviewMouseDown -= DismissCatalogueOptionsOnOutsideClick;
+        owner.PreviewKeyDown -= CatalogueOptionsKeyDown;
+        owner.Deactivated -= DismissCatalogueOptions;
+        owner.LocationChanged -= DismissCatalogueOptions;
+        owner.SizeChanged -= DismissCatalogueOptions;
+    }
+
+    private void DismissCatalogueOptionsOnOutsideClick(object sender, MouseButtonEventArgs e)
+    {
+        if (!CatalogueOptionsPopup.IsOpen || CatalogueOptions.IsMouseOver || CatalogueOptionsPanel.IsMouseOver) return;
+        if (ModelMode.IsDropDownOpen && ModelMode.Template?.FindName("PART_Popup", ModelMode) is Popup { Child: UIElement { IsMouseOver: true } })
+            return;
+        CloseCatalogueOptions();
+    }
+
+    private void CatalogueOptionsKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape || !CatalogueOptionsPopup.IsOpen) return;
+        CloseCatalogueOptions();
+        CatalogueOptions.Focus();
+        e.Handled = true;
+    }
+
+    private void DismissCatalogueOptions(object? sender, EventArgs e) => CloseCatalogueOptions();
+
+    private void CloseCatalogueOptions()
+    {
+        if (CatalogueOptionsPopup is { IsOpen: true }) CatalogueOptionsPopup.IsOpen = false;
+    }
 
     private async void ModelModeChanged(object sender, SelectionChangedEventArgs e)
     {
@@ -29,13 +87,14 @@ public partial class ModelPreview
     {
         filterCancellation?.Cancel();
         namedSelection?.Cancel();
+        scanCancellation?.Cancel();
         var raw = ModelMode.SelectedIndex == 2;
         NpcNamesButton.Visibility = raw ? Visibility.Collapsed : Visibility.Visible;
         PathTreeView.Reset(ModelTree);
         ModelSearch.IsEnabled = raw ? models != null : namedModels != null;
-        BrowserStatus.Text = source == null ? "请选择游戏目录" : raw ? "点击「扫描资源索引」查找目录之外的模型" : "尚未读取";
+        BrowserStatus.Text = source == null ? "请选择游戏目录" : raw ? "正在读取已知模型路径…" : "尚未读取";
         if (ModelSearch.IsEnabled) await ApplyModelFilter();
-        else StartCatalogueIfVisible();
+        StartCatalogueIfVisible();
     }
 
     private async Task SelectCatalogueMode(int index)
@@ -58,16 +117,61 @@ public partial class ModelPreview
             var result = await Task.Run(() => game.ListModelLocations(current.Token, progress: progress, charactersOnly: charactersOnly), current.Token);
             current.Token.ThrowIfCancellationRequested();
             models = result;
+            modelCatalogRevision = game.MediaCatalogRevision;
             await SelectCatalogueMode(2);
             return $"已扫描 {result.Count:N0} 个模型，含 {result.Count(model => model.Path.StartsWith("sqpack:", StringComparison.Ordinal)):N0} 个路径未识别模型";
         }
         finally { if (scanCancellation == current) scanCancellation = null; }
     }
 
+    private int modelCatalogRevision = -1;
+
     private void StartCatalogueIfVisible()
     {
-        if (IsVisible && ShowBrowser && source != null && namedModels == null && ModelMode.SelectedIndex != 2 &&
-            scanCancellation is not { IsCancellationRequested: false }) _ = ReadCatalogue();
+        if (!IsVisible || !ShowBrowser || source == null || scanCancellation is { IsCancellationRequested: false }) return;
+        if (ModelMode.SelectedIndex == 2)
+        {
+            if (models == null || modelCatalogRevision != source.MediaCatalogRevision) _ = ReadKnownModelPaths();
+        }
+        else if (namedModels == null) _ = ReadCatalogue();
+    }
+
+    private async Task ReadKnownModelPaths()
+    {
+        if (source is not { } game) return;
+        using var current = new CancellationTokenSource();
+        scanCancellation = current;
+        var revision = game.MediaCatalogRevision;
+        BrowserStatus.Text = "正在读取已知模型路径…";
+        try
+        {
+            var result = await Task.Run(() => game.ListKnownLocalMediaLocations("model", current.Token), current.Token);
+            current.Token.ThrowIfCancellationRequested();
+            if (!ReferenceEquals(source, game)) return;
+            models = result;
+            modelCatalogRevision = revision;
+            if (ModelMode.SelectedIndex == 2)
+            {
+                ModelSearch.IsEnabled = true;
+                await ApplyModelFilter();
+            }
+        }
+        catch (OperationCanceledException) when (current.IsCancellationRequested) { }
+        catch (Exception ex)
+        {
+            if (!current.IsCancellationRequested && ReferenceEquals(source, game)) BrowserStatus.Text = "读取模型目录失败 · " + ex.Message;
+        }
+        finally { if (scanCancellation == current) scanCancellation = null; }
+    }
+
+    private async void ScanUnknownModels(object sender, RoutedEventArgs e)
+    {
+        if (source == null) return;
+        UnknownModelsButton.IsEnabled = false;
+        try { BrowserStatus.Text = await ScanUnknownAsync(CancellationToken.None, new Progress<string>(text => BrowserStatus.Text = text)); }
+        catch (OperationCanceledException) { }
+        catch (Exception ex) { BrowserStatus.Text = "扫描模型失败 · " + ex.Message; }
+        finally { UnknownModelsButton.IsEnabled = true; }
     }
 
     private async void ImportModelPaths(object sender, RoutedEventArgs e)
@@ -77,7 +181,10 @@ public partial class ModelPreview
         {
             Title = "导入已知模型路径（每行一个游戏内路径）", Filter = "路径列表 (*.txt)|*.txt|所有文件 (*.*)|*.*"
         };
-        if (dialog.ShowDialog() != true) return;
+        CloseCatalogueOptions();
+        var owner = Window.GetWindow(this);
+        var accepted = owner == null ? dialog.ShowDialog() : dialog.ShowDialog(owner);
+        if (accepted != true || !ReferenceEquals(source, game)) return;
         scanCancellation?.Cancel();
         ModelPathsButton.IsEnabled = false;
         try
@@ -91,7 +198,8 @@ public partial class ModelPreview
                 PathTreeView.Reset(ModelTree);
                 ModelSearch.IsEnabled = false;
             }
-            BrowserStatus.Text = $"合并后共 {count:N0} 条候选路径。点击「扫描资源索引」按本地索引匹配。";
+            BrowserStatus.Text = $"合并后共 {count:N0} 条候选路径，正在匹配本地索引。";
+            await SelectCatalogueMode(2);
         }
         catch (Exception ex) { BrowserStatus.Text = "导入模型路径失败 · " + ex.Message; }
         finally { ModelPathsButton.IsEnabled = true; }
@@ -103,15 +211,47 @@ public partial class ModelPreview
         var order = byNumber ? new[] { "怪物", "亚人", "武器" }
             : new[] { "宠物", "召唤兽", "坐骑", "时尚配饰", "战斗NPC", "事件NPC", "其他模型" };
         var comparer = StringComparer.Create(CultureInfo.GetCultureInfo("zh-CN"), ignoreCase: true);
-        return PathTree.Build(entries, entry => TreePath(entry, byNumber), filter,
-                entry => $"{entry.Name} {entry.Path} {entry.SourceSheet} {entry.SourceRowId} ModelChara {entry.ModelCharaId} {entry.NameSource}", token, comparer)
+        var tree = PathTree.Build(entries, entry => TreePath(entry, byNumber), filter,
+                entry => $"{entry.Name} {entry.Path} {entry.SourceSheet} {entry.SourceRowId} ModelChara {entry.ModelCharaId} {entry.NameSource}", token, comparer);
+        return SortModelNodes(tree, byNumber, comparer, token)
             .OrderBy(node => Array.IndexOf(order, node.Label) is var index && index >= 0 ? index : order.Length).ToArray();
+    }
+
+    private static IReadOnlyList<PathTreeNode> SortModelNodes(IReadOnlyList<PathTreeNode> nodes, bool byNumber,
+        IComparer<string> labels, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        return nodes.Select(node => node.IsDirectory
+                ? new PathTreeNode(node.FullPath, node.Label, node.Payload,
+                    SortModelNodes(node.Children, byNumber, labels, token), true, node.IsExpanded)
+                : node)
+            .OrderBy(node => node, Comparer<PathTreeNode>.Create((left, right) =>
+            {
+                var kind = right.IsDirectory.CompareTo(left.IsDirectory);
+                if (kind != 0) return kind;
+                if (left.Payload is NamedModelEntry a && right.Payload is NamedModelEntry b)
+                {
+                    var variant = byNumber ? a.Variant.CompareTo(b.Variant) : 0;
+                    if (variant != 0) return variant;
+                    var id = a.SourceRowId.CompareTo(b.SourceRowId);
+                    if (id != 0) return id;
+                }
+                else if (byNumber && left.Label.Length > 1 && right.Label.Length > 1 &&
+                    uint.TryParse(left.Label.AsSpan(1), out var aNumber) &&
+                    uint.TryParse(right.Label.AsSpan(1), out var bNumber))
+                {
+                    var number = aNumber.CompareTo(bNumber);
+                    if (number != 0) return number;
+                }
+                var label = labels.Compare(left.Label, right.Label);
+                return label != 0 ? label : StringComparer.Ordinal.Compare(left.FullPath, right.FullPath);
+            })).ToArray();
     }
 
     private static string TreePath(NamedModelEntry entry, bool byNumber)
     {
         var name = entry.Name.Replace('/', '／').Replace('\\', '＼');
-        var label = name.StartsWith('#') ? name : $"{name} · #{entry.SourceRowId}";
+        var label = name.StartsWith('#') || name == $"{entry.SourceSheet} #{entry.SourceRowId}" ? name : $"{name} · #{entry.SourceRowId}";
         if (!byNumber) return $"{entry.Category}/{label}";
         var parts = entry.Path.Split('/');
         var category = entry.ModelType switch { 3 => "怪物", 2 => "亚人", 4 => "武器", _ => "其他" };

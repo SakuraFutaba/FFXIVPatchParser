@@ -1,8 +1,10 @@
+using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.Text;
 using System.Windows;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Threading;
 
 namespace FFXIVPatchParser.Desktop;
@@ -17,6 +19,7 @@ public partial class SqPackBrowser
     private SqPackFileSystemPreview? fileBytePage;
     private FileTarget? fileTarget;
     private bool showFileHex, filePreviewSuspended;
+    private bool copyingFilePath;
     private CancellationTokenSource? fileRequest;
     private Task filePreviewTask = Task.CompletedTask;
 
@@ -25,6 +28,7 @@ public partial class SqPackBrowser
         if (show == (FileTree.Visibility == Visibility.Visible)) return;
         if (!show) fileTreeWidth = FileTreeColumn.Width;
         FileTree.Visibility = FileSplitter.Visibility = FileDetails.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        FileDetailsRow.SharedSizeGroup = show ? "FileHeader" : null;
         FileTreeColumn.MinWidth = show ? 180 : 0;
         FileTreeColumn.MaxWidth = show ? 470 : double.PositiveInfinity;
         FileTreeColumn.Width = show ? fileTreeWidth : new(0);
@@ -33,6 +37,9 @@ public partial class SqPackBrowser
         ImageTreeColumn.Width = new(show ? 0 : 310);
         TableTreeDivider.Width = ImageTreeDivider.Width = new(show ? 0 : 8);
         TableTreePanel.Visibility = LocalImageTreePanel.Visibility = LocalImagePathPanel.Visibility = show ? Visibility.Collapsed : Visibility.Visible;
+        (show ? FooterTableToolbar : InlineTableToolbar).Content = null;
+        TableToolbar.Margin = show ? new(0, 4, 0, 6) : new(0, 6, 0, 0);
+        (show ? InlineTableToolbar : FooterTableToolbar).Content = TableToolbar;
         LocalModelsPanel.ShowBrowser = LocalAudioPanel.ShowBrowser = !show;
         LocalMapsPanel.ShowMapBrowser(!show);
         if (show && fileEntry == null) ResetFilePreview();
@@ -44,7 +51,17 @@ public partial class SqPackBrowser
         SqPackPage? previewPage = currentPage;
         if (files) previewPage = showFileHex ? null : fileTarget?.Page;
         TablesPanel.Visibility = Visible(SqPackPage.Tables);
-        LocalImagesPanel.Visibility = Visible(SqPackPage.Images);
+        var inTable = previewPage == SqPackPage.Tables;
+        var statusHost = inTable ? TableStatusHost : PageStatusHost;
+        if (statusHost.Content == null)
+        {
+            (inTable ? PageStatusHost : TableStatusHost).Content = null;
+            statusHost.Content = BrowserStatusBar;
+        }
+        var browseImages = currentPage == SqPackPage.Images;
+        LocalImagesPanel.Visibility = files || imagePage == ImagePage.Textures ? Visible(SqPackPage.Images) : Visibility.Collapsed;
+        LocalIconBrowser.Visibility = browseImages && imagePage == ImagePage.Icons ? Visibility.Visible : Visibility.Collapsed;
+        LocalUldBrowser.Visibility = browseImages && imagePage == ImagePage.Uld ? Visibility.Visible : Visibility.Collapsed;
         LocalModelsPanel.Visibility = Visible(SqPackPage.Models);
         LocalMapsPanel.Visibility = Visible(SqPackPage.Maps);
         LocalAudioPanel.Visibility = Visible(SqPackPage.Audio);
@@ -92,6 +109,7 @@ public partial class SqPackBrowser
         fileTarget = null;
         showFileHex = false;
         FileInfo.Text = "";
+        SetFilePreviewIssue(null);
         FileSourcePath.Text = "选择文件查看内容";
         FileHexText.Clear();
         UpdateFileButtons();
@@ -108,6 +126,7 @@ public partial class SqPackBrowser
         showFileHex = false;
         FileSourcePath.Text = entry.Path;
         FileInfo.Text = FileAddressLabel(entry);
+        SetFilePreviewIssue(null);
         FileHexText.Text = "正在读取文件…";
         UpdateFileButtons();
         UpdateVisiblePanels();
@@ -128,6 +147,7 @@ public partial class SqPackBrowser
         Task previous, CancellationTokenSource pending, bool reuse)
     {
         var token = pending.Token;
+        var bytesReady = false;
         try
         {
             await previous;
@@ -138,23 +158,28 @@ public partial class SqPackBrowser
             var page = reuse && fileBytePage is { } cached ? cached : await Task.Run(
                 () => source.ReadFileSystemFile(entry, FileHexPageSize, token, offset), token);
             token.ThrowIfCancellationRequested();
-            var target = first ? await FindFileTarget(source, entry, page, token) : fileTarget;
-            token.ThrowIfCancellationRequested();
-            fileTarget = target;
             fileBytePage = page;
             FileInfo.Text = $"{Workspace.Size(page.Size)} · {FileAddressLabel(entry)}";
             RenderFileHex(page);
+            bytesReady = true;
+            var target = first ? await FindFileTarget(source, entry, page, token) : fileTarget;
+            token.ThrowIfCancellationRequested();
+            fileTarget = target;
+            if (target is null) SetFilePreviewIssue(null);
             UpdateVisiblePanels();
             UpdateFileButtons();
-            if (!showFileHex && target != null) await OpenFileTarget(target);
+            if (!showFileHex && target != null)
+            {
+                var opened = await OpenFileTarget(target);
+                token.ThrowIfCancellationRequested();
+                if (!opened) ShowFilePreviewFailure($"此文件暂时无法显示{FilePreviewName(target.Page)}预览。");
+            }
         }
         catch (OperationCanceledException) when (token.IsCancellationRequested) { }
         catch (Exception ex)
         {
             if (token.IsCancellationRequested) return;
-            showFileHex = true;
-            FileHexText.Text = "无法读取文件 · " + ex.Message;
-            UpdateVisiblePanels();
+            ShowFilePreviewFailure((bytesReady ? "无法打开专用预览 · " : "无法读取文件字节 · ") + ex.Message);
         }
         finally
         {
@@ -165,6 +190,20 @@ public partial class SqPackBrowser
             }
             pending.Dispose();
         }
+    }
+
+    private void SetFilePreviewIssue(string? message)
+    {
+        FilePreviewIssue.Text = message ?? "";
+        FilePreviewIssue.Visibility = message is null ? Visibility.Collapsed : Visibility.Visible;
+    }
+
+    private void ShowFilePreviewFailure(string message)
+    {
+        showFileHex = true;
+        if (fileBytePage is null) FileHexText.Clear();
+        SetFilePreviewIssue(message);
+        UpdateVisiblePanels();
     }
 
     private static string FileAddressLabel(SqPackFileSystemEntry entry)
@@ -224,30 +263,47 @@ public partial class SqPackBrowser
         return sheets.FirstOrDefault(sheet => string.Equals(sheet, name, StringComparison.OrdinalIgnoreCase));
     }
 
-    private Task OpenFileTarget(FileTarget target) => target.Page switch
+    private async Task<bool> OpenFileTarget(FileTarget target)
     {
-        SqPackPage.Tables => OpenLocalTableAsync(target.Path),
-        SqPackPage.Images => CurrentTexturePath == target.Path ? Task.CompletedTask : ShowLocalTexture(target.Path, remember: false),
-        SqPackPage.Audio => LocalAudioPanel.IsPreviewingPath(target.Path) ? Task.CompletedTask : LocalAudioPanel.OpenAsync(target.Path),
-        SqPackPage.Models => LocalModelsPanel.IsPreviewingPath(target.Path) ? Task.CompletedTask : LocalModelsPanel.OpenIndexedFileAsync(target.Path),
-        SqPackPage.Maps => LocalMapsPanel.OpenMapFileAsync(target.Map!, target.MapImage),
-        _ => Task.CompletedTask
+        switch (target.Page)
+        {
+            case SqPackPage.Tables:
+                await OpenLocalTableAsync(target.Path);
+                return CurrentTableName == target.Path && tablePage != null;
+            case SqPackPage.Images:
+                if (CurrentTexturePath != target.Path) await ShowLocalTexture(target.Path, remember: false);
+                return CurrentTexturePath == target.Path;
+            case SqPackPage.Audio:
+                if (!LocalAudioPanel.IsPreviewingPath(target.Path)) await LocalAudioPanel.OpenAsync(target.Path);
+                return LocalAudioPanel.IsPreviewingPath(target.Path);
+            case SqPackPage.Models:
+                if (!LocalModelsPanel.IsPreviewingPath(target.Path)) await LocalModelsPanel.OpenIndexedFileAsync(target.Path);
+                return LocalModelsPanel.IsPreviewingPath(target.Path);
+            case SqPackPage.Maps:
+                await LocalMapsPanel.OpenMapFileAsync(target.Map!, target.MapImage);
+                return LocalMapsPanel.HasFilePreview;
+            default:
+                return false;
+        }
+    }
+
+    private static string FilePreviewName(SqPackPage page) => page switch
+    {
+        SqPackPage.Tables => "表格", SqPackPage.Images => "图片", SqPackPage.Models => "模型",
+        SqPackPage.Maps => "地图", SqPackPage.Audio => "音频", _ => "文件"
     };
 
     private void UpdateFileButtons()
     {
         var ready = fileRequest == null && fileBytePage != null;
-        CopyFilePathButton.IsEnabled = fileEntry != null;
+        CopyFilePathButton.IsEnabled = fileEntry != null && !copyingFilePath;
         SwitchFilePreviewButton.Visibility = JumpToFilePreviewButton.Visibility = fileTarget != null ? Visibility.Visible : Visibility.Collapsed;
         SwitchFilePreviewButton.IsEnabled = ready;
         JumpToFilePreviewButton.IsEnabled = ready;
         SwitchFilePreviewButton.Content = showFileHex ? "查看预览" : "查看 Hex";
-        JumpToFilePreviewButton.Content = fileTarget?.Page switch
-        {
-            SqPackPage.Tables => "打开表格页", SqPackPage.Images => "打开图片页", SqPackPage.Models => "打开模型页",
-            SqPackPage.Maps => "打开地图页", SqPackPage.Audio => "打开音频页", _ => "打开预览页"
-        };
-        FileHexNavigation.Visibility = fileBytePage is { Size: > 0 } ? Visibility.Visible : Visibility.Collapsed;
+        JumpToFilePreviewButton.Content = fileTarget is { } target ? $"打开{FilePreviewName(target.Page)}页" : "打开预览页";
+        FileHexNavigation.Visibility = FileHexPanel.Visibility == Visibility.Visible && fileBytePage is { Size: > 0 }
+            ? Visibility.Visible : Visibility.Collapsed;
         FileHexNavigation.IsEnabled = ready;
         PreviousFileHexButton.IsEnabled = fileBytePage is { Offset: > 0 };
         NextFileHexButton.IsEnabled = fileBytePage is { Truncated: true };
@@ -258,22 +314,42 @@ public partial class SqPackBrowser
         if (fileTarget == null) return;
         showFileHex = !showFileHex;
         UpdateVisiblePanels();
-        if (!showFileHex) ResumeFilePreview();
+        if (!showFileHex)
+        {
+            SetFilePreviewIssue(null);
+            ResumeFilePreview();
+        }
         UpdateFileButtons();
     }
 
     private async void JumpToFilePreview(object sender, RoutedEventArgs e)
     {
         if (fileTarget is not { } target) return;
-        PageRequested?.Invoke(target.Page);
-        await OpenFileTarget(target);
+        try
+        {
+            PageRequested?.Invoke(target.Page);
+            if (!await OpenFileTarget(target)) SetStatus($"此文件暂时无法显示{FilePreviewName(target.Page)}预览。", true);
+        }
+        catch (Exception ex) { SetStatus("无法打开预览 · " + ex.Message, true); }
     }
 
-    private void CopyFilePath(object sender, RoutedEventArgs e)
+    private async void CopyFilePath(object sender, RoutedEventArgs e)
     {
-        if (fileEntry is not { } entry) return;
-        try { Clipboard.SetText(entry.KnownPath ?? fileBytePage?.Path ?? entry.Locator); }
-        catch (System.Runtime.InteropServices.ExternalException ex) { SetStatus("无法复制路径 · " + ex.Message, true); }
+        if (copyingFilePath || fileEntry is not { } entry || PresentationSource.FromVisual(this) is not HwndSource source) return;
+        var path = entry.KnownPath ?? fileBytePage?.Path ?? entry.Locator;
+        copyingFilePath = true;
+        CopyFilePathButton.IsEnabled = false;
+        try
+        {
+            MainWindow.Notify(this, await ClipboardText.TryCopyAsync(source.Handle, path)
+                ? "已复制路径" : "剪贴板正被占用，请稍后重试。");
+        }
+        catch (Win32Exception ex) { MainWindow.Notify(this, "无法复制路径 · " + ex.Message); }
+        finally
+        {
+            copyingFilePath = false;
+            CopyFilePathButton.IsEnabled = fileEntry != null;
+        }
     }
 
     private void PreviousFileHex(object sender, RoutedEventArgs e)

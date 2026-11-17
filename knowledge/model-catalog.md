@@ -72,6 +72,25 @@ flowchart LR
 
 字面别名及其翻译用于显示。需要按行跳转到 `BNpcName` 时，用有 `N:` 行号的映射。详情中的字面名称来源统一标为「Anamnesis 手工名字」，FFCafé 或 InfSein 翻译来源尚未逐条显示。
 
+### 从 BossMod 主目标补充战斗 NPC 名称
+
+BossMod 从游戏对象的 `BaseId` 读取战斗模块所用的 OID。模块未显式指定主目标时，注册器使用 `OID.Boss`。模块浏览器用 `GroupType.CFC` 模块的 `NameID` 查询 `BNpcName`，副本名称则来自 `ContentFinderCondition`。其他 GroupType 的 `NameID` 可能指向别的表。模块中的小怪、机制道具和共享模型需要独立证据。 [运行时对象](https://github.com/awgil/ffxiv_bossmod/blob/ee5b04a4ab63fb4313d29dbbb671f029f74752b7/BossMod/Framework/WorldStateGameSync.cs#L394) · [主目标注册](https://github.com/awgil/ffxiv_bossmod/blob/ee5b04a4ab63fb4313d29dbbb671f029f74752b7/BossMod/BossModule/BossModuleRegistry.cs#L86) · [副本、主目标名称](https://github.com/awgil/ffxiv_bossmod/blob/ee5b04a4ab63fb4313d29dbbb671f029f74752b7/BossMod/Config/ModuleViewer.cs#L417)
+
+2026-11-16 对照 BossMod `ee5b04a` 和国服简中 `2026.11.03.0000.0000`。以下八个主目标在本地同时有副本、名称和可定位的模型，用于补充原有名称映射的空缺。复现时先从模块记下 `GroupID`、`NameID` 和 `OID.Boss`，再在本地查看对应的副本、名称和 `BNpcBase` 模型列，按 `ModelChara` 定位模型。两个林德布鲁姆同名，各自保留名称行和模型。
+
+| BNpcBase | BNpcName | 本地简中 | ContentFinderCondition | ModelChara | BossMod 模块 |
+| ---: | ---: | --- | ---: | ---: | --- |
+| 16661 | 12854 | 艳翼蛇鸟 | 832 | 3999 | `T01Valigarmanda` |
+| 17065 | 12881 | 佐拉加 | 995 | 3605 | `T02Everkeep` |
+| 16832 | 13029 | 永恒女王 | 984 | 4036 | `T03QueenEternal` |
+| 18371 | 13861 | 泽莲尼娅 | 1030 | 4411 | `T04Zelenia` |
+| 18544 | 14093 | 永远之暗 | 1061 | 4497 | `T05Necron` |
+| 18992 | 14284 | 格莱杨拉波尔 | 1076 | 4656 | `T07Doomtrain` |
+| 19195 | 14378 | 林德布鲁姆 | 1075 | 4658 | `RM12S1TheLindwurm` |
+| 19202 | 14379 | 林德布鲁姆 | 1075 | 4659 | `RM12S2TheLindwurm` |
+
+实现使用已核对的八组 ID，界面可以跳到本地名称行与模型行。 [试炼模块](https://github.com/awgil/ffxiv_bossmod/tree/ee5b04a4ab63fb4313d29dbbb671f029f74752b7/BossMod.Modules/Dawntrail/Trial) · [零式模块](https://github.com/awgil/ffxiv_bossmod/tree/ee5b04a4ab63fb4313d29dbbb671f029f74752b7/BossMod.Modules/Dawntrail/Savage) · [目录实现](../src/FFXIVPatchParser/LocalGameSource.NamedModels.cs)
+
 ### InfSein 对照实际覆盖多少
 
 研究固定在提交 [`9e2c05c`](https://github.com/InfSein/ffxiv-datamining-mixed/tree/9e2c05c0ed8205d5397031152f62a34900355de4)。该快照中的 `en`、`ja`、`chs` 三份 `BNpcName` 均为 15,001 行，文件通过 Git blob 校验。英文和日文表最后更新标记为 GLOBAL 7.56，简中为 CHS 7.58，三者属于同一仓库快照，但客户端版本不同。
@@ -112,7 +131,7 @@ Godbert 从 `ModelChara` 筛出类型 3，按路径规则检查 IMC 和 MDL 是�
 
 在国服简中构建 `2026.11.03.0000.0000` 上，模型扫描先检查索引地址的资源类型，再用仓库、资源类别和 64 位索引哈希匹配已知路径。命中后还要确认本地安装中存在该路径。索引只存哈希，查不到路径或匹配到多个候选时保留 `sqpack:容器@偏移#哈希`。角色或物件的中文名称需另查来源表。 [模型扫描](../src/FFXIVPatchParser/LocalGameSource.ModelCatalog.cs) · [路径目录](../src/FFXIVPatchParser/LocalGameSource.ModelPaths.cs)
 
-路径来源包括已加载的本地命名模型目录、通过 EXH 签名检查的 `ModelChara` 候选、常见角色和装备路径，以及用户导入的 UTF-8 文本目录。文本格式为每行一个游戏内 `.mdl` 路径。展开「扫描选项」，点击「导入已知模型路径」，再用右上角的「扫描资源索引」查看匹配结果。导入会与 `tmp/model-paths/catalog.txt` 合并去重，清除当前实例的完整模型扫描缓存。其他已打开的游戏源实例需要重新打开才会读取新目录。路径列表不包含模型内容。
+路径来源包括已加载的本地命名模型目录、通过 EXH 签名检查的 `ModelChara` 候选、常见角色和装备路径，以及用户导入的 UTF-8 文本目录。文本格式为每行一个游戏内 `.mdl` 路径。展开「扫描选项」，点击「导入已知模型路径」，导入后自动进入「全部已知模型路径」查看匹配结果。导入会与 `tmp/model-paths/catalog.txt` 合并去重，清除当前实例的完整模型扫描缓存。其他已打开的游戏源实例需要重新打开才会读取新目录。路径列表不包含模型内容。
 
 ### 场景样例实测
 
@@ -142,3 +161,10 @@ Godbert 从 `ModelChara` 筛出类型 3，按路径规则检查 IMC 和 MDL 是�
 上述场景测试另有 7.294 秒的游戏源初始化耗时。已验证取消请求生效，已知路径与未知地址都能读取模型。
 
 另测 `0.0.0.30 → 0.0.0.31` 全部模型相关容器。从游戏源初始化完成后计时，共 125.68 秒，筛出 8 个写入候选。校验目标文件和分析差分合计 123.88 秒，之后的索引筛选约 1.80 秒。抽查的场景模型 `w_xma_009_03a.mdl` 和装备模型 `c0201e0167_sho.mdl` 均能预览。选择单个容器时只校验该容器和对应索引，可缩短等待。 [SqPack 与媒体资源](sqpack-media.md)
+
+
+## 已知路径目录与未知模型扫描
+
+本地模型页保留「按来源分类」与「按模型编号」目录。选择「全部已知模型路径」后自动读取当前 SqPack 索引中匹配的 `.mdl` 路径，包含角色和场景等类别，不逐项读取未知资源的 DAT 文件头。导入模型路径后自动切到该目录并重新匹配；切换游戏源会清空旧目录。
+
+需要查找未识别路径时，可在「扫描选项」中点「扫描未知模型」；默认扫描角色容器，勾选「包含场景等模型」后扩展范围。此操作仍会逐项读取资源头，耗时取决于容器规模。 [目录交互](../src/FFXIVPatchParser.Desktop/ModelPreview.Catalog.cs) · [已知媒体索引](../src/FFXIVPatchParser/LocalGameSource.LocalMediaCatalog.cs)

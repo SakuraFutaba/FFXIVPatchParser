@@ -12,6 +12,18 @@ public sealed record NamedModelEntry(string Category, string Name, string Source
 public sealed partial class LocalGameSource
 {
     private IReadOnlyList<NamedModelEntry>? namedModels;
+    // 已对照国服 7.58 的副本、名称行和模型。上游模块及版本见 knowledge/model-catalog.md。
+    private static readonly IReadOnlyDictionary<uint, uint> BossModNameRows = new Dictionary<uint, uint>
+    {
+        [16661] = 12854,
+        [17065] = 12881,
+        [16832] = 13029,
+        [18371] = 13861,
+        [18544] = 14093,
+        [18992] = 14284,
+        [19195] = 14378,
+        [19202] = 14379
+    };
     // Verified against the exact CHS 2026.11.03.0000.0000 datamining schema and installed EXH.
     // InfSein/ffxiv-datamining-mixed commit 9e2c05c0ed8205d5397031152f62a34900355de4.
     // Hash covers every physical column's ID, type and offset, not just the fields used below.
@@ -118,6 +130,13 @@ public sealed partial class LocalGameSource
                     else if (hint.StartsWith("E:", StringComparison.Ordinal) && uint.TryParse(hint.AsSpan(2), out var eventId) && eventNames.TryGetValue(eventId, out var eventName))
                     { name = eventName[0]; nameRowId = eventId; provenance = $"Anamnesis BNpcBase→ENpcResident #{eventId} (本地CHS)"; }
                     else if (!hint.Contains(':')) { name = hint; provenance = "Anamnesis 手工名字"; }
+                }
+                if (string.IsNullOrWhiteSpace(name) && BossModNameRows.TryGetValue(id, out var bossNameId) &&
+                    battleNames.TryGetValue(bossNameId, out var bossName) && !string.IsNullOrWhiteSpace(bossName[0]))
+                {
+                    name = bossName[0];
+                    nameRowId = bossNameId;
+                    provenance = $"BossMod 主目标 → BNpcName #{bossNameId}（本地简中）";
                 }
                 Add("战斗NPC", name, "BNpcBase", id, (uint)Number(row[0]), provenance, nameRowId);
             }

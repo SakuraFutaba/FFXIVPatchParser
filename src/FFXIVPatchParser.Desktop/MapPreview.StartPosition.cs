@@ -9,6 +9,9 @@ namespace FFXIVPatchParser.Desktop;
 
 public partial class MapPreview
 {
+    private void ResizeMapScene(object sender, SizeChangedEventArgs e) =>
+        ((UIElement)sender).Clip = new System.Windows.Media.RectangleGeometry(new Rect(e.NewSize), 6, 6);
+
     private StartPosition? startPosition;
     private StartPosition? capturedStartPosition;
     private Point3D? sceneEntrance;
@@ -105,7 +108,6 @@ public partial class MapPreview
             WriteStartPositions(entries);
             startPosition = preset;
             capturedStartPosition = null;
-            suspendedCamera = null;
             StartPositionInput.Text = preset != null ? FormatPosition(preset.Position) : "";
             ClearStartPositionButton.IsEnabled = preset != null;
             StartPositionStatus.Text = preset != null ? "已保存此区域的预览起点"

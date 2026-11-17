@@ -55,6 +55,9 @@ internal static class PathTreeView
         return false;
     }
 
+    internal static bool SelectItem(TreeView view, IReadOnlyList<int> path, bool notify) =>
+        notify ? SelectItem(view, path) : States.GetValue(view, tree => new ViewState(tree)).SelectQuietly(path);
+
     private static VirtualizingPanel? FindItemsHost(DependencyObject root, ItemsControl owner)
     {
         if (root is VirtualizingPanel panel && ItemsControl.GetItemsOwner(panel) == owner) return panel;
@@ -175,6 +178,18 @@ internal static class PathTreeView
                 }
                 finally { Restoring = false; }
             });
+        }
+        public bool SelectQuietly(IReadOnlyList<int> path)
+        {
+            Restoring = true;
+            try
+            {
+                if (!SelectItem(view, path)) return false;
+                if (view.SelectedItem is PathTreeNode node) Selected = SelectionKey.From(node);
+                restorePath = null;
+                return true;
+            }
+            finally { Restoring = false; }
         }
     }
 }

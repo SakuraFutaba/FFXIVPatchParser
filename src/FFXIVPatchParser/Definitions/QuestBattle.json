@@ -1,0 +1,14 @@
+{
+  "sheet": "QuestBattle",
+  "schemaHash": "714597950F9896D183AD4957CD32AEC57869F67A90215A31594C0153F121DFAA",
+  "definitions": [
+    {
+      "index": 0,
+      "name": "Quest",
+      "converter": {
+        "type": "link",
+        "target": "Quest"
+      }
+    }
+  ]
+}
