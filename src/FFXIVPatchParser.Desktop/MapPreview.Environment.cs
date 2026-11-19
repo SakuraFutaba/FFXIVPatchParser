@@ -10,7 +10,49 @@ namespace FFXIVPatchParser.Desktop;
 
 public partial class MapPreview
 {
+    private NativeSkyPass? nativeSky;
+    private bool nativeSkyUnavailable;
+
+    private void OnEnvironmentUnloaded(object sender, RoutedEventArgs e) => ReleaseNativeSky();
+
+    private void ReleaseNativeSky()
+    {
+        nativeSky?.Dispose();
+        nativeSky = null;
+        nativeSkyUnavailable = false;
+    }
+
     private Dictionary<uint, GameSkyTexture> skyTextures = [];
+    private readonly System.Diagnostics.Stopwatch environmentElapsed = new();
+    private System.Windows.Threading.DispatcherTimer? environmentTimer;
+
+    private void StartEnvironmentClock(object sender, RoutedEventArgs e)
+    {
+        if (environmentTimer == null)
+        {
+            environmentTimer = new() { Interval = TimeSpan.FromMilliseconds(250) };
+            environmentTimer.Tick += (_, _) =>
+            {
+                var seconds = environmentElapsed.Elapsed.TotalSeconds;
+                environmentElapsed.Restart();
+                EnvironmentTime.Value = (EnvironmentTime.Value + seconds / 175.0) % 24;
+            };
+        }
+        environmentElapsed.Restart();
+        environmentTimer.Start();
+    }
+
+    private void StopEnvironmentClock(object sender, RoutedEventArgs e)
+    {
+        environmentTimer?.Stop();
+        environmentElapsed.Reset();
+    }
+
+    private void EnvironmentClockVisibilityChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (sender is System.Windows.Controls.Primitives.ToggleButton button && !button.IsVisible)
+            button.IsChecked = false;
+    }
 
     private sealed record WeatherOption(GameTerritoryWeather Weather, GameEnvironmentWeather? Timeline, BitmapSource? Icon)
     {
@@ -53,6 +95,8 @@ public partial class MapPreview
     {
         var options = environment.Weathers.Select(w => new WeatherOption(w, w.HasFlag ? null :
             timeline?.Weathers.FirstOrDefault(t => t.Id == w.Id), icons.GetValueOrDefault(w.IconId))).ToArray();
+        Unloaded -= OnEnvironmentUnloaded;
+        Unloaded += OnEnvironmentUnloaded;
         skyTextures = textures;
         ExperimentalSky.IsEnabled = textures.Count > 0;
         EnvironmentControls.Visibility = options.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -63,7 +107,9 @@ public partial class MapPreview
     private void ClearEnvironment()
     {
         if (WeatherChoice == null) return;
+        ReleaseNativeSky();
         skyTextures.Clear();
+        PlayEnvironmentTime.IsChecked = false;
         WeatherChoice.ItemsSource = null;
         EnvironmentControls.Visibility = Visibility.Collapsed;
         MapSurface.Background = new SolidColorBrush(Color.FromRgb(30, 41, 56));
@@ -77,6 +123,8 @@ public partial class MapPreview
         var index = WeatherChoice.SelectedIndex;
         PreviousWeatherButton.IsEnabled = index > 0;
         NextWeatherButton.IsEnabled = index >= 0 && index < WeatherChoice.Items.Count - 1;
+        PlayEnvironmentTime.IsEnabled = WeatherChoice.SelectedItem is WeatherOption { Timeline: not null };
+        if (!PlayEnvironmentTime.IsEnabled) PlayEnvironmentTime.IsChecked = false;
         ApplyEnvironment();
     }
 
@@ -143,8 +191,29 @@ public partial class MapPreview
         if (ExperimentalSky?.IsChecked == true && timeline.CandidateSkyTextureId is { } id &&
             skyTextures.TryGetValue(id, out var sky))
         {
-            ShowEnvironmentSky(new ImageBrush(SampleSky(sky, seconds)));
-            EnvironmentHint.Text = $"实验预览 · sky_{id:D3}.tex\n使用游戏纹理，编号对应关系和方向、时间、亮度仍采用近似。";
+            BitmapSource? nativeImage = null;
+            if (!nativeSkyUnavailable && source != null)
+            {
+                try
+                {
+                    if (nativeSky?.TextureSource != sky)
+                    {
+                        ReleaseNativeSky();
+                        var bytecode = source.ReadNativeSkyProgram();
+                        if (bytecode.Length > 0) nativeSky = new NativeSkyPass(bytecode.Span, sky);
+                        else nativeSkyUnavailable = true;
+                    }
+                    nativeImage = nativeSky?.Render(seconds);
+                }
+                catch (Exception ex) when (ex is System.Runtime.InteropServices.ExternalException or
+                    DllNotFoundException or EntryPointNotFoundException or IOException or NotSupportedException or ArgumentException)
+                {
+                    ReleaseNativeSky();
+                    nativeSkyUnavailable = true;
+                }
+            }
+            ShowEnvironmentSky(new ImageBrush(nativeImage ?? SampleSky(sky, seconds)));
+            EnvironmentHint.Text = $"{(nativeImage == null ? "CPU 采样" : "原生 Sky.shcd")} · sky_{id:D3}.tex\n方向、时间及亮度采用预览常量。";
             EnvironmentHint.ToolTip = sky.Path;
             return;
         }
@@ -166,7 +235,7 @@ public partial class MapPreview
             for (var x = 0; x < width; x++)
             {
                 var direction = MathF.Cos(MathF.Tau * x / (width - 1));
-                var color = texture.SampleExperimental(direction, elevation, seconds);
+                var color = texture.SampleExperimental(direction * MathF.Sin(MathF.PI * y / (height - 1)), elevation, seconds);
                 var index = (y * width + x) * 4;
                 pixels[index] = (byte)(255 * color.Z);
                 pixels[index + 1] = (byte)(255 * color.Y);

@@ -55,17 +55,20 @@ TEX 解码后可按原始尺寸导出 PNG，保留透明通道。预览的缩放
 
 MDL 提供网格，外观和动作还依赖 IMC、材质、纹理、骨架及 PAP。真实客户端的身体、装备、怪物和头发四个 MDL 样本通过解码和离屏渲染检查。材质近似和动作采样的覆盖范围另有实测。 [模型、材质与动作](models-animation.md)
 
-SCD 是音频容器，可能含多条音轨。程序按轨道读取编码，提取 Ogg Vorbis 或 MP3，或为 MS ADPCM 构造 WAV。实测样本覆盖 Ogg Vorbis 和 MS ADPCM。 [音轨读取](../src/FFXIVPatchParser/LocalGameSource.Audio.cs) · [Lumina ScdFile](https://github.com/NotAdam/Lumina/blob/8802d66a3cb3032be2fcf998bb10e864221bdb13/src/Lumina/Data/Files/ScdFile.cs)
+SCD 是音频容器，可能含多条音轨。程序按轨道读取编码，提取 Ogg Vorbis、MP3 或 HCA，也可将 MS ADPCM 和 PCM 16-bit 封装为 WAV。 [音轨读取](../src/FFXIVPatchParser/LocalGameSource.Audio.cs) · [Lumina ScdFile](https://github.com/NotAdam/Lumina/blob/8802d66a3cb3032be2fcf998bb10e864221bdb13/src/Lumina/Data/Files/ScdFile.cs)
+
+国服简中构建 `2026.11.03.0000.0000` 的已命名音频中，扫描每个 SCD 的首个 SqPack 数据块，在可读到轨道描述的范围内发现 337 个文件含 HCA（编码 `0x1A`），共 460 条 HCA 轨。读取扩展头中的 HCA 文件头长度，用 SCD 的 Ogg V3 查找表还原后续帧，再将文件头与帧拼接即可交给 FFmpeg。通过 `ReadAudio(path, 0)` 提取 `sound/battle/enpc/se_enpc_alchemist_mc_f_a.scd`、同目录的 `se_enpc_axeattack_02_a.scd` 和 `music/ex2/movie/stormblood_loop.scd`，三例均为 44,100 Hz、HCA 内部加密类型 0。FFmpeg 完整解码输出每声道 56,320、20,480 和 11,936,768 个采样帧，均有非零信号。前两例为单声道，后一例为六声道，桌面预览沿用 FFmpeg 转双声道 PCM 的播放路径。这三个样本的 HCA 头均无循环区块，预览支持整轨循环。[vgmstream 的 HCA 封装读取](https://github.com/vgmstream/vgmstream/blob/master/src/meta/sqex_scd.c#L329-L365) · [SCD 帧还原算法与查找表](https://github.com/vgmstream/vgmstream/blob/master/src/meta/sqex_streamfile.h#L11-L43)
+
 
 本地音频页自动按已知 `.scd` 路径建立目录，并保留 BGM 曲名显示。选择目录树中的文件后才读取音轨。历史 BGM 专用目录在国服 7.58 简体中文客户端包含 1,287 条路径；旧版手动扫描 `cut`、`sound`、`music` 三类容器得到 102,427 条去重路径，其中包括匿名地址。这些数量不代表当前已知路径目录的覆盖范围。 [音频目录界面](../src/FFXIVPatchParser.Desktop/AudioPreview.xaml.cs)
 
 音频合成地址按容器、偏移和索引哈希直接校验后读取，不需要先扫描容器。此前匿名地址依赖扫描缓存；若同一哈希已解析成已知路径，扫描缓存中只保留已知路径，匿名地址便无法打开。实测用标题曲 `music/ex2/bgm_ex2_system_title.scd` 的合成地址在新建数据源中读取，内容与逻辑路径完全一致，且没有填充容器扫描缓存；错误偏移和空哈希地址被拒绝。 [音频地址解析](../src/FFXIVPatchParser/LocalGameSource.Audio.cs)
 
-Windows 解码失败时，桌面端可调用已有 FFmpeg 转 PCM。转码保留完整时长和采样率，切换歌曲或退出可取消转码。国服 7.58 实测 `music/ex4/bgm_ex4_wks_01.scd` 转码后为 318.898 秒。
+Windows 解码失败时，桌面端可调用已有 FFmpeg 转 PCM。转码保留完整时长和采样率，切换歌曲或退出可取消转码。2026-11-19 在国服简中构建 `2026.11.03.0000.0000` 用 `ReadAudio` 读取 `music/ex4/bgm_ex4_wks_01.scd`，得到 44,100 Hz 双声道 Vorbis 和循环区间 `[1,572,419, 14,063,384)`。以 FFmpeg 解码为 PCM 16-bit 后，ffprobe 读得每声道 14,063,385 帧，时长 318.897619 秒。本样本验证了五分钟之后的音频数据和循环点元数据。
 
 Vorbis 的 `LOOPSTART`、`LOOPEND` 来自 Ogg 注释，单位是每声道的采样帧。SCD 音轨头中的 Ogg 循环值是字节位置。PCM 16-bit 和 MS ADPCM 使用 SCD 音轨头的循环字节位置，按声道对齐或 ADPCM 块换算为采样帧。单曲循环先播放前奏，随后反复缓冲 `[LOOPSTART, LOOPEND)` 内的 PCM。PCM 可直接使用循环队列，压缩音轨需要 PATH 中的 FFmpeg；缺少循环点或 FFmpeg 时使用整轨重复。 [vgmstream 的 SCD 实现](https://github.com/vgmstream/vgmstream/blob/master/src/meta/sqex_scd.c)
 
-国服构建 `2026.11.03.0000.0000` 的 `music/ex2/bgm_ex2_system_title.scd` 有 44,100 Hz 采样率，循环点为 1,065,385 至 2,742,057。桌面验证中，从循环终点前定位后，播放位置回到循环起点附近并继续推进。
+国服构建 `2026.11.03.0000.0000` 的 `music/ex2/bgm_ex2_system_title.scd` 有 44,100 Hz 采样率，循环点为 1,065,385 至 2,742,057。桌面验证中，从循环终点前定位后，播放位置回到循环起点附近并继续推进。对上述 318.898 秒长曲，离屏 WPF 探针使用桌面版 PCM 循环播放器，确认音量为零后从 318.647574 秒播放。越过记录终点 318.897596 秒后，第一次轮询读到 35.708549 秒，与记录起点 35.655760 秒相差约 53 毫秒。[PCM 循环播放器](../src/FFXIVPatchParser.Desktop/PcmLoopPlayer.cs)
 ### 全局音乐播放与短音轨重播
 
 2026-11-16，国服简中 `2026.11.03.0000.0000` 样本的 `sqpack:ffxiv/070000.win32.dat0@30a8cd00#c2d4378e002f5cd4.scd` 含 14,230 字节的 MS ADPCM 音轨。WPF 使用 FFmpeg 回退为 PCM，时长约 0.585 秒。音轨自然结束后，下一次播放用新的 `MediaPlayer` 打开同一缓存。暂停和定位继续使用当前实例。离屏回归覆盖短音效和约 62.178 秒的 Ogg Vorbis 标题曲，包括结束后重播、暂停定位、停止后重播、来源切换和单曲循环。旧版本的二次播放失败在同机离屏测试中未能稳定复现，具体触发条件待确认。 [播放生命周期](../src/FFXIVPatchParser.Desktop/AudioPreview.xaml.cs)
@@ -110,6 +113,24 @@ ADD、RUN 和 COPY 写出的区间都参与筛选。只有从旧文件复制到�
 这次唯一的音频候选来自 `cut` 过场类别。按文件类型筛选时也要检查其他可能存放该类型的容器。场景和角色容器里的纹理同理。
 
 要做资源级 Hex Diff 或找出删除项，需要旧版与新版的配套索引和容器。先按资源身份对齐，再比较解压后的字节。若要判断画面或声音是否变化，还需处理纹理编码、模型依赖和音轨内容。 [国服 V3 补丁](cn-patches.md) · [复现实验与验证](verification.md)
+
+## AVFX 调度与粒子预览
+
+国服简中构建 `2026.11.03.0000.0000` 的妖星乱舞绝境战样本可从「地图 → 战斗时间线与特效资源」导入 ResLogger2 清单后打开，也可在 SqPack 文件系统按 AVFX 路径打开。读取从 `XFVA` 开头的反序标签和四字节对齐区块。调度器的最后一个 `Item`、时间线的最后一个 `Item` 以及发射器的最后一个 `ItPr` 保存各自的累积条目。用其中的启用标识、编号和起止时间串起调度器、时间线、点发射器和粒子。`TC1` 通过纹理索引连接 `Tex` 路径，实测部分样本使用 `TLst` 的第一项。标量关键帧的末尾 float 为值，另外两个 float 与曲线切线有关。 [AVFX 区块结构](https://github.com/xivdev/docs/blob/master/content/game-data/visual-effects/avfx-files.md) · [VFXEditor 纹理字段](https://github.com/0ceal0t/Dalamud-VFXEditor/blob/main/VFXEditor/Formats/AvfxFormat/Particle/Texture/AvfxParticleTextureColor1.cs)
+
+实测 `z3oy_b0_g04c0c.avfx` 可播放 5 条轨道，预览长度 96 帧。`z3oy_b0_g04t0c.avfx` 可播放 2 条轨道，共 116 帧。播放使用真实纹理、发射时间、寿命和可读取的位移、缩放、旋转、RGB 与 Alpha 曲线。当前以 60 帧／秒的时钟展示局部 XY 投影，使用线性或阶跃采样，执行常规、乘法、加法与滤色的预览混合。绑定到地图或角色、游戏原生混合与深度、完整粒子动力学、其他发射／粒子类型和运行时触发器仍待接入。 [读取实现](../src/FFXIVPatchParser/LocalGameSource.Avfx.cs) · [预览控件](../src/FFXIVPatchParser.Desktop/MapPreview.Avfx.cs)
+
+`z3oy_boss_gimmick04.tmb` 的无条件轨道中，两条 C012 分别在第 0 帧和第 28 帧引用上述两个 AVFX。打开 TMB 可按这两个真实触发帧播放 7 条已支持的粒子轨道。当前合成使用局部坐标原点，TMB 的目标挂点、变换、条件脚本及其他指令尚未应用。同一构建的 EXE 中已由 C012 命令表定位实例初始化与上下文回退分支，后续可继续确认不同目标怎样绑定。 [TMB 读取](../src/FFXIVPatchParser/LocalGameSource.TmbAvfx.cs) · [TMB 与 AVFX 客户端核对](client-runtime.md#tmb-命令与-avfx-实例)
+
+### 武器光效的 IMC 入口与挂点
+
+国服简中 `2026.11.03.0000.0000` 核对了 8 组战斗武器和 4 组工具。每组共用一个 MDL，通过 `Item.ModelMain` 的第三个 `UInt16` 选择不同 IMC 子集。在实测 `PartMask=1` 的 IMC 中，每条长 6 字节，偏移 `+4` 是 VFX 编号。安忒亚 `Item #24675` 与安忒亚·改 `#24707` 都用 `w0201/b0112`，子集 1 的 VFX 为 0，子集 2 的 VFX 为 2。后者实际找到 `chara/weapon/w0201/obj/body/b0112/vfx/eff/vw0002.avfx`。同一模型能否出现附加光效取决于所选子集。
+
+幻化柜公开源码按 VFX 编号选路径：小于 100 的编号拼到武器 Body 的 `vfx/eff/vwNNNN.avfx`，其余查 `vfx/weapon/eff/vwNNNN.avfx`。成对武器可共享主手的 IMC 来源。它把材质自发光与附加 AVFX 分开处理，后者随武器的自身骨骼和模型挂点变换。冷启动预览以通知 6 初始化拔刀后的时间线，以通知 5 处理收刀后的淡出及相应轨道。源码明确区分已稳定状态与尚未模拟的收拔过渡。这个结论来自所链接的源码，未运行上游程序。 [IMC 与武器资源](https://gitee.com/kilislan-wei/ffxiv_offline_glamour/blob/a97d546bf401808f5044b4ee068707cb58593c16/weapons/weapons.py) · [挂点和调度](https://gitee.com/kilislan-wei/ffxiv_offline_glamour/blob/a97d546bf401808f5044b4ee068707cb58593c16/weapons/weapon_effects.py) · [特效渲染](https://gitee.com/kilislan-wei/ffxiv_offline_glamour/blob/a97d546bf401808f5044b4ee068707cb58593c16/effects/effect_renderer.py)
+
+从「模型 → 按资源类型 → 武器」打开安忒亚·改时，独立物品预览按 IMC 子集找到 `vw0002.avfx`。点发射器的 `PrVT=5` 通过 `Data.MdNo` 选择内嵌 `Modl`，`VDrw` 每顶点 36 字节，`VIdx` 每三角形 6 字节。时间线的 `BdNo` 定位点绑定，`PrpS.BPID` 与武器 MDL 的 Element ID 匹配。此样本使用 `n_hara` 下的挂点 3、4，Y 偏移分别为 0.13751、0.51718。样本共读出 9 条模型粒子和 1 条面向镜头的纹理粒子轨道，离屏 WPF 验证光效进入模型画面，PAP 保持停止。切换到同模型的安忒亚时，IMC 不提供附加光效。 [AVFX 读取](../src/FFXIVPatchParser/LocalGameSource.Avfx.cs) · [装备光效与挂点](../src/FFXIVPatchParser/LocalGameSource.ItemEffects.cs) · [VFXEditor 顶点读法](https://github.com/0ceal0t/Dalamud-VFXEditor/blob/main/VFXEditor/Formats/AvfxFormat/Model/AvfxVertexes.cs)
+
+当前独立预览沿用 WPF 的发光材质，按资源轨道更新透明度与局部变换。带透明顶点的模型将插值后的 Alpha 烘到贴图。混合、颜色取样和粒子生成采用近似，部分叠层会显出三角边界。武器收拔过渡、非静止骨骼挂点和角色装备上的光效仍待接入。 [独立物品光效渲染](../src/FFXIVPatchParser.Desktop/ModelPreview.ItemEffects.cs)
 
 ## 待研究
 

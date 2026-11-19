@@ -1,0 +1,11 @@
+{
+  "sheet": "CutActionTimeline",
+  "schemaHash": "0530E253EE0143E5913560DA5787C5C28EB8D2BA2D06F6CA088F06AFB537E050",
+  "defaultColumn": "Key",
+  "definitions": [
+    {
+      "index": 0,
+      "name": "Key"
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "sheet": "HousingYardObject",
+  "schemaHash": "7A0D8622CF60D0DC5C05EF6A2DEFA0861B13051D252F00DC9CC609F10F0D9360",
+  "definitions": [
+    { "index": 0, "name": "ModelKey" },
+    { "index": 6, "name": "Item", "converter": { "type": "link", "target": "Item" } }
+  ]
+}

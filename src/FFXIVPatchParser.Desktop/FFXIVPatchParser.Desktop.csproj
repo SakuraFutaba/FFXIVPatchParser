@@ -3,6 +3,7 @@
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
     <UseWPF>true</UseWPF>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <AssemblyName>FFXIVPatchParser.Desktop</AssemblyName>
   </PropertyGroup>
   <ItemGroup><ProjectReference Include="../FFXIVPatchParser/FFXIVPatchParser.csproj" /></ItemGroup>

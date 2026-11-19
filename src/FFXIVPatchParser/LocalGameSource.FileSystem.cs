@@ -299,22 +299,7 @@ public sealed partial class LocalGameSource
         lock (gate)
         {
             token.ThrowIfCancellationRequested();
-            ListFileSystemContainers(token);
-            if (!fileSystemPacks!.TryGetValue(entry.Container, out var pack)) throw new FileNotFoundException("未知 SqPack 容器。");
-            // 校验选择属于此索引，避免让自造 locator 访问任意偏移。
-            var entries = EnumerateFileSystemEntries(entry.Container, token);
-            var lo = 0; var hi = entries.Count - 1; var found = false;
-            while (lo <= hi)
-            {
-                var mid = lo + (hi - lo) / 2;
-                var candidate = entries[mid];
-                var comparison = candidate.Offset.CompareTo(entry.Offset);
-                if (comparison == 0) comparison = candidate.Hash.CompareTo(entry.Hash);
-                if (comparison == 0) comparison = candidate.IsIndex2.CompareTo(entry.IsIndex2);
-                if (comparison == 0) { found = candidate.IsIndex2 == entry.IsIndex2; break; }
-                if (comparison < 0) lo = mid + 1; else hi = mid - 1;
-            }
-            if (!found) throw new InvalidDataException("该地址不属于当前索引。");
+            var pack = ValidateFileEntry(entry, token);
             using var stream = File.OpenRead(pack.Pack.FullName);
             using var reader = new BinaryReader(stream);
             stream.Position = entry.Offset;
@@ -326,7 +311,12 @@ public sealed partial class LocalGameSource
             if (type is < 2 or > 4) throw new InvalidDataException("未知 SqPack 文件类型。");
             var count = (int)Math.Min(maxBytes, Math.Max(0L, size - offset));
             byte[] bytes;
-            if (type == 2) bytes = ReadFileSystemStandard(reader, entry.Offset, header, size, offset, count, token);
+            if (type == 2)
+            {
+                using var page = new MemoryStream(count);
+                CopyFileSystemStandard(reader, entry.Offset, header, size, offset, count, page, token);
+                bytes = page.ToArray();
+            }
             else
             {
                 if (size > 256 * 1024 * 1024) throw new NotSupportedException("模型或纹理超过 256 MiB 单文件预览限制。");
@@ -351,15 +341,87 @@ public sealed partial class LocalGameSource
         }
     }
 
-    private static byte[] ReadFileSystemStandard(BinaryReader reader, long start, uint header, uint size, long requestedOffset, int count, CancellationToken token)
+    private FileSystemPack ValidateFileEntry(SqPackFileSystemEntry entry, CancellationToken token)
+    {
+        ListFileSystemContainers(token);
+        if (!fileSystemPacks!.TryGetValue(entry.Container, out var pack)) throw new FileNotFoundException("未知 SqPack 容器。");
+        // 校验选择属于此索引，避免让自造 locator 访问任意偏移。
+        var entries = EnumerateFileSystemEntries(entry.Container, token);
+        var lo = 0; var hi = entries.Count - 1; var found = false;
+        while (lo <= hi)
+        {
+            var mid = lo + (hi - lo) / 2;
+            var candidate = entries[mid];
+            var comparison = candidate.Offset.CompareTo(entry.Offset);
+            if (comparison == 0) comparison = candidate.Hash.CompareTo(entry.Hash);
+            if (comparison == 0) comparison = candidate.IsIndex2.CompareTo(entry.IsIndex2);
+            if (comparison == 0) { found = candidate.IsIndex2 == entry.IsIndex2; break; }
+            if (comparison < 0) lo = mid + 1; else hi = mid - 1;
+        }
+        if (!found) throw new InvalidDataException("该地址不属于当前索引。");
+        return pack;
+    }
+
+    public long ExportFileSystemFile(SqPackFileSystemEntry entry, string destination, bool overwrite, CancellationToken token = default)
+    {
+        destination = Path.GetFullPath(destination);
+        FileSystemPack pack;
+        lock (gate) pack = ValidateFileEntry(entry, token);
+        if (string.Equals(destination, Path.GetFullPath(pack.Pack.FullName),
+            OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
+            throw new IOException("不能把导出目标设成源 SqPack 容器。");
+        token.ThrowIfCancellationRequested();
+        var temporary = Path.Combine(Path.GetDirectoryName(destination)!, "." + Guid.NewGuid().ToString("N") + ".partial");
+        using var output = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+        try
+        {
+            using var stream = File.OpenRead(pack.Pack.FullName);
+            using var reader = new BinaryReader(stream);
+            stream.Position = entry.Offset;
+            var header = reader.ReadUInt32();
+            var type = reader.ReadUInt32();
+            var size = reader.ReadUInt32();
+            if (header < 24 || header > stream.Length - entry.Offset) throw new InvalidDataException("SqPack 文件头越界。");
+            if (type == 2) CopyFileSystemStandard(reader, entry.Offset, header, size, 0, size, output, token);
+            else if (type is 3 or 4)
+            {
+                if (size > 256 * 1024 * 1024) throw new NotSupportedException("模型或纹理超过 256 MiB 单文件导出限制。");
+                byte[] bytes;
+                lock (gate)
+                {
+                    token.ThrowIfCancellationRequested();
+                    var resource = pack.Pack.ReadFile<FileResource>(entry.Offset);
+                    using (resource.Reader) bytes = resource.Data;
+                }
+                if (bytes.LongLength != size) throw new InvalidDataException("解包后的长度与文件头不符。");
+                for (var i = 0; i < bytes.Length; i += 65536)
+                {
+                    token.ThrowIfCancellationRequested();
+                    output.Write(bytes, i, Math.Min(65536, bytes.Length - i));
+                }
+            }
+            else if (type != 1) throw new InvalidDataException("未知 SqPack 文件类型。");
+            var length = output.Length;
+            output.Dispose();
+            token.ThrowIfCancellationRequested();
+            File.Move(temporary, destination, overwrite);
+            return length;
+        }
+        finally
+        {
+            output.Dispose();
+            File.Delete(temporary);
+        }
+    }
+
+    private static void CopyFileSystemStandard(BinaryReader reader, long start, uint header, uint size, long requestedOffset, long count, Stream destination, CancellationToken token)
     {
         var stream = reader.BaseStream;
         stream.Position = start + 20;
         var blocks = reader.ReadUInt32();
         if (24L + blocks * 8L > header) throw new InvalidDataException("SqPack 块表越界。");
-        var result = new byte[count];
         long decoded = 0;
-        var copied = 0;
+        long copied = 0;
         for (var i = 0u; i < blocks && copied < count; i++)
         {
             token.ThrowIfCancellationRequested();
@@ -386,11 +448,10 @@ public sealed partial class LocalGameSource
                 inflate.ReadExactly(block);
             }
             var skip = (int)Math.Max(0, requestedOffset - decoded);
-            var take = Math.Min(count - copied, block.Length - skip);
-            block.AsSpan(skip, take).CopyTo(result.AsSpan(copied));
+            var take = (int)Math.Min(count - copied, block.Length - skip);
+            destination.Write(block, skip, take);
             copied += take; decoded += raw;
         }
         if (copied != count) throw new InvalidDataException("SqPack 文件块不足。");
-        return result;
     }
 }

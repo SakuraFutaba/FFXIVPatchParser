@@ -1,0 +1,11 @@
+{
+  "sheet": "MotionTimeline",
+  "schemaHash": "020EFAA367870EDEF6FE074103BE4665F9916E45328E7BC10D5F8E32947F08CB",
+  "defaultColumn": "Filename",
+  "definitions": [
+    {
+      "index": 0,
+      "name": "Filename"
+    }
+  ]
+}

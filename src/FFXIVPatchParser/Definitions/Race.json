@@ -1,0 +1,55 @@
+{
+  "sheet": "Race",
+  "schemaHash": "8EF43D2CE25DDD05A5D09FF32431D2CE3DE85F9F160C5A2A76C93ED7EBEEE78B",
+  "defaultColumn": "Masculine",
+  "definitions": [
+    {
+      "index": 0,
+      "name": "Masculine"
+    },
+    {
+      "index": 1,
+      "name": "Feminine"
+    },
+    {
+      "index": 2,
+      "name": "MaleBody",
+      "converter": { "type": "link", "target": "Item" }
+    },
+    {
+      "index": 3,
+      "name": "MaleHands",
+      "converter": { "type": "link", "target": "Item" }
+    },
+    {
+      "index": 4,
+      "name": "MaleLegs",
+      "converter": { "type": "link", "target": "Item" }
+    },
+    {
+      "index": 5,
+      "name": "MaleFeet",
+      "converter": { "type": "link", "target": "Item" }
+    },
+    {
+      "index": 6,
+      "name": "FemaleBody",
+      "converter": { "type": "link", "target": "Item" }
+    },
+    {
+      "index": 7,
+      "name": "FemaleHands",
+      "converter": { "type": "link", "target": "Item" }
+    },
+    {
+      "index": 8,
+      "name": "FemaleLegs",
+      "converter": { "type": "link", "target": "Item" }
+    },
+    {
+      "index": 9,
+      "name": "FemaleFeet",
+      "converter": { "type": "link", "target": "Item" }
+    }
+  ]
+}

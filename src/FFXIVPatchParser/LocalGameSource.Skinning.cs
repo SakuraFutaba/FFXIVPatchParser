@@ -44,13 +44,14 @@ public sealed partial class LocalGameSource
         var bi = Array.FindIndex(elements, e => e.Usage == (byte)Vertex.VertexUsage.BlendIndices && e.UsageIndex == 0);
         if (wi < 0 || bi < 0 || mesh.BoneTableIndex >= palettes.Length) return ([], []);
         var w = elements[wi]; var b = elements[bi];
-        // Four unsigned-byte indices and four UNORM8 weights. Keep unsupported layouts static.
-        if ((w.Type != 8 && w.Type != 5) || b.Type != 5) return ([], []);
+        // 面部网格可以使用八个字节分别编码八项权重和索引。
+        var components = (w.Type, b.Type) switch { (5 or 8, 5) => 4, (17, 17) => 8, _ => 0 };
+        if (components == 0) return ([], []);
         var indices = new int[mesh.VertexCount][]; var weights = new float[mesh.VertexCount][];
         for (var v = 0; v < mesh.VertexCount; v++)
         {
-            indices[v] = new int[4]; weights[v] = new float[4];
-            for (var j = 0; j < 4; j++)
+            indices[v] = new int[components]; weights[v] = new float[components];
+            for (var j = 0; j < components; j++)
             {
                 var weight = ReadBlendByte(buffer, mesh, w, v, j) / 255f;
                 var local = ReadBlendByte(buffer, mesh, b, v, j);
@@ -65,7 +66,7 @@ public sealed partial class LocalGameSource
 
     private static byte ReadBlendByte(ReadOnlySpan<byte> data, MdlStructs.MeshStruct mesh, MdlStructs.VertexElement element, int vertex, int component)
     {
-        if (element.Stream >= mesh.VertexStreamCount || element.Offset + 4 > mesh.VertexBufferStride[element.Stream])
+        if (element.Stream >= mesh.VertexStreamCount || element.Offset + component + 1 > mesh.VertexBufferStride[element.Stream])
             throw new InvalidDataException("蒙皮顶点声明越界。");
         var offset = (long)mesh.VertexBufferOffset[element.Stream] + vertex * mesh.VertexBufferStride[element.Stream] + element.Offset + component;
         if (offset < 0 || offset >= data.Length) throw new InvalidDataException("蒙皮顶点缓冲区越界。");
@@ -88,7 +89,28 @@ public sealed partial class LocalGameSource
             this.clip = clip;
             var names = clip.BoneNames.Select((name, index) => (name, index))
                 .ToDictionary(p => p.name, p => p.index, StringComparer.Ordinal);
-            var map = preview.BoneNames.Select(n => names.TryGetValue(n, out var i) ? i : -1).ToArray();
+            var assembly = preview.Path.StartsWith("character:", StringComparison.Ordinal);
+            var map = preview.BoneNames.Select(name =>
+            {
+                var faceBone = name.StartsWith("face/", StringComparison.Ordinal);
+                if (clip.IsFaceAnimation && assembly && !faceBone) return -2;
+                if (assembly && (name.StartsWith("met/", StringComparison.Ordinal) || name.StartsWith("top/", StringComparison.Ordinal)))
+                {
+                    // 附加骨保持局部参考姿势时，其蒙皮矩阵等于最近一个有动作的祖先。
+                    foreach (var ancestor in name[4..].Split('/'))
+                        if (names.TryGetValue(ancestor, out var attached)) return attached;
+                    if (name.StartsWith("met/", StringComparison.Ordinal)) name = "j_kao";
+                    else if (name.StartsWith("top/j_ex_top", StringComparison.Ordinal)) return -2;
+                }
+                if (faceBone && names.TryGetValue(name, out var layered)) return layered;
+                if (faceBone)
+                {
+                    name = name[5..];
+                    // 脸模下缘也使用身体骨骼。只有脸部专用骨在缺少表情轨时随头部运动。
+                    if (!clip.IsFaceAnimation && !names.ContainsKey(name)) name = "j_kao";
+                }
+                return names.TryGetValue(name, out var index) ? index : clip.IsFaceAnimation ? -2 : -1;
+            }).ToArray();
             positions = preview.Meshes.Select(mesh => mesh.Positions.ToArray()).ToArray();
             influences = new (int Bone, float Weight)[positions.Length][][];
             for (var m = 0; m < positions.Length; m++)
@@ -109,7 +131,7 @@ public sealed partial class LocalGameSource
                     {
                         if (weights[j] <= 0) continue;
                         var bone = indices[j];
-                        if ((uint)bone >= map.Length || map[bone] < 0)
+                        if ((uint)bone >= map.Length || map[bone] == -1)
                             throw new NotSupportedException("模型与动作骨架不兼容：找不到顶点引用的骨骼。");
                         binding.Add((map[bone], weights[j] / total));
                     }
@@ -130,7 +152,7 @@ public sealed partial class LocalGameSource
                 {
                     var value = Vector3.Zero;
                     foreach (var influence in influences[m][v])
-                        value += Vector3.Transform(positions[m][v], matrices[influence.Bone]) * influence.Weight;
+                        value += (influence.Bone == -2 ? positions[m][v] : Vector3.Transform(positions[m][v], matrices[influence.Bone])) * influence.Weight;
                     output[v] = value;
                 }
                 result[m] = output;
@@ -140,35 +162,5 @@ public sealed partial class LocalGameSource
     }
 
     public static Vector3[][] SkinModelFrame(GameModelPreview preview, ModelAnimationClip clip, int frame)
-    {
-        if (preview.Path != clip.ModelPath) throw new ArgumentException("动作与预览模型不匹配。");
-        if ((uint)frame >= clip.Frames.Length) throw new ArgumentOutOfRangeException(nameof(frame));
-        var nameMap = clip.BoneNames.Select((name, index) => (name, index)).ToDictionary(p => p.name, p => p.index, StringComparer.Ordinal);
-        var map = preview.BoneNames.Select(n => nameMap.TryGetValue(n, out var i) ? i : -1).ToArray();
-        var matrices = clip.Frames[frame];
-        return preview.Meshes.Select(mesh =>
-        {
-            if (mesh.BoneIndices.Length != mesh.Positions.Length || mesh.BoneWeights.Length != mesh.Positions.Length)
-                throw new NotSupportedException("此模型的顶点蒙皮格式暂不支持动作播放。");
-            var output = new Vector3[mesh.Positions.Length];
-            for (var v = 0; v < output.Length; v++)
-            {
-                var total = 0f;
-                for (var j = 0; j < mesh.BoneWeights[v].Length; j++)
-                {
-                    var w = mesh.BoneWeights[v][j]; if (w <= 0) continue;
-                    var modelBone = mesh.BoneIndices[v][j];
-                    if ((uint)modelBone >= map.Length || map[modelBone] < 0)
-                        throw new NotSupportedException("模型与动作骨架不兼容：找不到顶点引用的骨骼。");
-                    output[v] += Vector3.Transform(mesh.Positions[v], matrices[map[modelBone]]) * w;
-                    total += w;
-                }
-                if (total <= 0) throw new NotSupportedException("模型有未绑定的顶点，无法可靠播放。");
-                output[v] /= total;
-            }
-            return output;
-        }).ToArray();
-    }
+        => CreateModelSkinningBinding(preview, clip).SkinFrame(frame);
 }
-
-

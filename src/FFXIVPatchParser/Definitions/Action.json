@@ -1,0 +1,50 @@
+{
+  "sheet": "Action",
+  "schemaHash": "C8E1868904E3F58331AE021D96BCF8F3F2998C80E3F1A581BD0ED8B646260CEA",
+  "defaultColumn": "Name",
+  "definitions": [
+    {
+      "index": 0,
+      "name": "Name"
+    },
+    {
+      "index": 2,
+      "name": "Icon",
+      "converter": { "type": "icon" }
+    },
+    {
+      "index": 3,
+      "name": "ActionCategory",
+      "converter": { "type": "link", "target": "ActionCategory" }
+    },
+    {
+      "index": 5,
+      "name": "Animation{Start}",
+      "converter": {
+        "type": "link",
+        "target": "ActionCastTimeline"
+      }
+    },
+    {
+      "index": 6,
+      "name": "VFX",
+      "converter": { "type": "link", "target": "ActionCastVFX" }
+    },
+    {
+      "index": 7,
+      "name": "Animation{End}",
+      "converter": {
+        "type": "link",
+        "target": "ActionTimeline"
+      }
+    },
+    {
+      "index": 8,
+      "name": "ActionTimeline{Hit}",
+      "converter": {
+        "type": "link",
+        "target": "ActionTimeline"
+      }
+    }
+  ]
+}

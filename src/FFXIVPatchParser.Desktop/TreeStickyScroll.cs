@@ -24,10 +24,12 @@ public static class TreeStickyScroll
 
     private sealed class State
     {
+        private readonly record struct PinnedRow(TreeViewItem Item, IPathTreeRow Node, double Height, double Left, double HeaderLeft);
+
         private readonly TreeView tree;
         private StackPanel? layer;
         private bool queued;
-        private List<(TreeViewItem Item, PathTreeNode Node)> pinned = [];
+        private List<PinnedRow> pinned = [];
 
         public State(TreeView tree)
         {
@@ -66,7 +68,7 @@ public static class TreeStickyScroll
                 };
             }
 
-            var rows = new List<(TreeViewItem Item, PathTreeNode Node, double Height, double Indent)>();
+            var rows = new List<PinnedRow>();
             if (GetEnabled(tree) && viewport.VerticalOffset > 0 && FindFirstRow(viewport, viewport) is { } first)
             {
                 var chain = new Stack<TreeViewItem>();
@@ -75,25 +77,26 @@ public static class TreeStickyScroll
                 double height = 0;
                 foreach (var item in chain)
                 {
-                    if (item.Header is not PathTreeNode { IsDirectory: true } node || !item.IsExpanded ||
+                    if (item.Header is not IPathTreeRow { IsDirectory: true } node || !item.IsExpanded ||
                         Header(item) is not { } header) continue;
                     var position = header.TranslatePoint(new Point(), viewport);
                     if (position.Y >= height || height + header.ActualHeight > viewport.ViewportHeight - header.ActualHeight)
                         break;
-                    rows.Add((item, node, header.ActualHeight, Math.Max(0, position.X - 10)));
+                    rows.Add(new(item, node, header.ActualHeight, item.TranslatePoint(new Point(), viewport).X, position.X));
                     height += header.ActualHeight;
                 }
             }
 
-            if (pinned.SequenceEqual(rows.Select(row => (row.Item, row.Node)))) return;
-            pinned = rows.Select(row => (row.Item, row.Node)).ToList();
+            if (pinned.SequenceEqual(rows)) return;
+            pinned = rows;
             layer.Children.Clear();
-            foreach (var row in rows)
+            for (var index = 0; index < rows.Count; index++)
             {
+                var row = rows[index];
                 var label = new TextBlock { Text = row.Node.Label, TextTrimming = TextTrimming.CharacterEllipsis };
                 var button = new Button
                 {
-                    Content = label, Height = row.Height, Padding = new Thickness(row.Indent, 0, 10, 0),
+                    Content = label, Height = row.Height, Padding = new Thickness(row.Left, 0, 10, 0),
                     Margin = new Thickness(0), BorderThickness = new Thickness(0),
                     ToolTip = $"折叠 {row.Node.Label}"
                 };
@@ -106,7 +109,20 @@ public static class TreeStickyScroll
                     row.Item.BringIntoView(new Rect(0, 0, Math.Min(row.Item.ActualWidth, viewport.ViewportWidth), row.Height));
                     Schedule();
                 };
-                layer.Children.Add(button);
+                var container = new Grid();
+                container.Children.Add(button);
+                for (var ancestorIndex = 0; ancestorIndex < index; ancestorIndex++)
+                {
+                    var ancestor = rows[ancestorIndex];
+                    var guide = new Border
+                    {
+                        HorizontalAlignment = HorizontalAlignment.Left,
+                        Margin = new Thickness((ancestor.Left + ancestor.HeaderLeft - 1) / 2, 0, 0, 0)
+                    };
+                    guide.SetResourceReference(FrameworkElement.StyleProperty, "TreeIndentGuide");
+                    container.Children.Add(guide);
+                }
+                layer.Children.Add(container);
             }
             layer.Visibility = rows.Count > 0 ? Visibility.Visible : Visibility.Collapsed;
         }

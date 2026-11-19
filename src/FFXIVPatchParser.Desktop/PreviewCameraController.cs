@@ -14,6 +14,7 @@ internal sealed class PreviewCameraController
     private readonly Viewport3D viewport;
     private readonly PerspectiveCamera camera;
     private readonly double initialYaw, initialPitch;
+    private readonly bool modelProjection;
     private readonly HashSet<Key> navigationKeys = [];
     private Rect3D sceneBounds = Rect3D.Empty;
     private Rect3D frameBounds = Rect3D.Empty;
@@ -32,11 +33,12 @@ internal sealed class PreviewCameraController
     private Vector3D CameraUp => Vector3D.CrossProduct(CameraRight, Facing);
 
     public PreviewCameraController(FrameworkElement surface, Viewport3D viewport, PerspectiveCamera camera,
-        double initialYaw, double initialPitch)
+        double initialYaw, double initialPitch, bool modelProjection = false)
     {
         this.surface = surface;
         this.viewport = viewport;
         this.camera = camera;
+        this.modelProjection = modelProjection;
         this.initialYaw = yaw = initialYaw;
         this.initialPitch = pitch = initialPitch;
         InputMethod.SetIsInputMethodEnabled(surface, false);
@@ -107,13 +109,25 @@ internal sealed class PreviewCameraController
             pitch = initialPitch;
             cameraMoved = false;
         }
-        var bounds = frameBounds;
+        FrameBounds(frameBounds, 0.36);
+    }
+
+    public void FocusBounds(Rect3D bounds)
+    {
+        if (sceneBounds.IsEmpty || bounds.IsEmpty) return;
+        StopInput();
+        cameraMoved = true;
+        FrameBounds(bounds, 0.5);
+    }
+
+    private void FrameBounds(Rect3D bounds, double depthMargin)
+    {
         var size = new Vector3D(bounds.SizeX, bounds.SizeY, bounds.SizeZ);
         orbitCenter = bounds.Location + size / 2;
         var aspect = viewport.ActualWidth > 0 && viewport.ActualHeight > 0 ? viewport.ActualWidth / viewport.ActualHeight : 1;
         var horizontal = Math.Tan(camera.FieldOfView * Math.PI / 360);
         var distance = Math.Max(Project(size, CameraRight), Project(size, CameraUp) * aspect) / (2 * horizontal)
-            + Project(size, Facing) * 0.36;
+            + Project(size, Facing) * depthMargin;
         cameraPosition = orbitCenter - Facing * Math.Max(2, distance);
         navigationScale = Math.Max(0.1, size.Length);
         UpdateCamera();
@@ -135,8 +149,17 @@ internal sealed class PreviewCameraController
         var radius = Project(size, facing) / 2 + padding;
         camera.Position = cameraPosition;
         camera.LookDirection = facing;
-        camera.NearPlaneDistance = Math.Max(padding * 0.1, centerDepth - radius);
-        camera.FarPlaneDistance = Math.Max(camera.NearPlaneDistance + padding, centerDepth + radius);
+        if (modelProjection)
+        {
+            // 模型包围盒取自绑定姿势。动作可以越过它，投影需要留出前后余量。
+            camera.FarPlaneDistance = Math.Max(1, centerDepth + radius + navigationScale * 2);
+            camera.NearPlaneDistance = Math.Clamp(camera.FarPlaneDistance * 0.00002, 0.0002, 0.01);
+        }
+        else
+        {
+            camera.NearPlaneDistance = Math.Max(padding * 0.1, centerDepth - radius);
+            camera.FarPlaneDistance = Math.Max(camera.NearPlaneDistance + padding, centerDepth + radius);
+        }
     }
 
     private static double Project(Vector3D size, Vector3D axis)

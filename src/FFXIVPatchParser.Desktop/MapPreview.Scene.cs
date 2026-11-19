@@ -1,6 +1,9 @@
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.CompilerServices;
+using System.Windows.Input;
 using Vector3 = System.Numerics.Vector3;
+using Matrix4x4 = System.Numerics.Matrix4x4;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Media3D;
@@ -13,9 +16,53 @@ public partial class MapPreview
     private static readonly DiffuseMaterial TerrainMaterial = CreateMaterial(150, 162, 133);
     private static readonly DiffuseMaterial SceneryMaterial = CreateMaterial(180, 190, 199);
     private static readonly DiffuseMaterial FoliageMaterial = CreateMaterial(117, 154, 120);
+    private sealed class ScenePickTarget(GameTerritoryInstance instance)
+    {
+        public GameTerritoryInstance Instance { get; } = instance;
+        public Rect3D Bounds = Rect3D.Empty;
+    }
+
+    private sealed record VertexRange(int End, ScenePickTarget Target);
+    private static readonly ConditionalWeakTable<MeshGeometry3D, VertexRange[]> pickRanges = new();
+
+    private void FocusSceneObject(object sender, MouseButtonEventArgs e)
+    {
+        if (e.ChangedButton != MouseButton.Left || e.ClickCount != 2 || sceneBounds.IsEmpty) return;
+        if (!TryFocusSceneObject(e.GetPosition(MapViewport))) return;
+        MapSurface.Focus();
+        e.Handled = true;
+    }
+
+    private bool TryFocusSceneObject(Point position)
+    {
+        ScenePickTarget? target = null;
+        var nearest = double.PositiveInfinity;
+        VisualTreeHelper.HitTest(MapViewport, null, result =>
+        {
+            if (result is RayMeshGeometry3DHitTestResult hit && hit.DistanceToRayOrigin < nearest &&
+                pickRanges.TryGetValue(hit.MeshHit, out var ranges))
+            {
+                var range = Array.Find(ranges, range => hit.VertexIndex1 < range.End);
+                if (range != null)
+                {
+                    nearest = hit.DistanceToRayOrigin;
+                    target = range.Target;
+                }
+            }
+            return HitTestResultBehavior.Continue;
+        }, new PointHitTestParameters(position));
+        if (target == null) return false;
+        camera.FocusBounds(target.Bounds);
+        FocusedObject.Text = $"已聚焦 {Path.GetFileName(target.Instance.ModelPath)}";
+        FocusedObject.ToolTip = target.Instance.Layer + "\n" + target.Instance.ModelPath;
+        return true;
+    }
+
     private void ResetView(object sender, RoutedEventArgs e)
     {
         camera.Reset();
+        FocusedObject.Text = "";
+        FocusedObject.ToolTip = null;
         MapSurface.Focus();
     }
 
@@ -47,6 +94,9 @@ public partial class MapPreview
         }
 
         var stopwatch = Stopwatch.StartNew();
+        var managedGroupIds = MapEffectChoice.Items.OfType<MapEffectOption>()
+            .Where(option => option.Binding.Timelines.Any(t => t.Name is "bg_on" or "bg_off"))
+            .Select(option => option.Binding.LayoutId).ToHashSet();
         long drawTriangles = 0;
         var result = await Task.Run(() =>
         {
@@ -61,21 +111,26 @@ public partial class MapPreview
                 token.ThrowIfCancellationRequested();
                 foreach (var model in batch.Models) models.Add(model.Key, model.Value);
                 foreach (var material in batch.Materials) materials.Add(material.Key, material.Value);
-                var geometry = BuildSceneBatch(batch.Instances, models, materials, surfaces, clippedMeshes, token);
-                drawTriangles += geometry.TriangleCount;
+                var geometry = batch.Instances.GroupBy(instance => managedGroupIds.Contains(instance.RootSharedGroupId)
+                        ? instance.RootSharedGroupId : 0)
+                    .Select(group => (LayoutId: group.Key, Mesh: BuildSceneBatch(group.ToArray(), models, materials, surfaces, clippedMeshes, token)))
+                    .ToArray();
+                drawTriangles += geometry.Sum(group => group.Mesh.TriangleCount);
                 Dispatcher.Invoke(() =>
                 {
                     if (token.IsCancellationRequested || displayedPath != entry.ScenePath) return;
                     if (sceneBounds.IsEmpty) SetSceneEntrance(entrance);
-                    ShowSceneGroup(geometry.Opaque, geometry.Transparent, geometry.Terrain);
+                    foreach (var (layoutId, mesh) in geometry) ShowSceneGroup(mesh.Opaque, mesh.Transparent, mesh.Terrain, layoutId);
                     MapStatus.Text = $"已加载 {batch.LoadedInstances:N0} / {batch.TotalInstances:N0} 个场景实例";
                 }, DispatcherPriority.Background, token);
             });
+            var compactScene = layout.Instances.Count <= 768;
             return game.LoadTerritoryGeometry(layout, new()
             {
                 BatchSize = 384,
-                MaxTriangles = 1_000_000,
-                PreviewLod = layout.Instances.Count > 3000 ? 2 : 1
+                MaxTriangles = compactScene ? 2_000_000 : 1_000_000,
+                TextureMaxDimension = compactScene ? 512 : 256,
+                PreviewLod = compactScene ? 0 : layout.Instances.Count > 3000 ? 2 : 1
             }, progress, token);
         }, token);
         token.ThrowIfCancellationRequested();
@@ -128,13 +183,13 @@ public partial class MapPreview
         }
     }
 
-    private void ShowSceneGroup(Model3DGroup opaque, Model3DGroup transparent, Rect3D terrain)
+    private void ShowSceneGroup(Model3DGroup opaque, Model3DGroup transparent, Rect3D terrain, uint layoutId)
     {
         var bounds = opaque.Bounds;
         bounds.Union(transparent.Bounds);
         if (bounds.IsEmpty) return;
-        if (opaque.Children.Count > 0) visibleScene.Children.Insert(opaqueSceneGroups++, opaque);
-        if (transparent.Children.Count > 0) visibleScene.Children.Add(transparent);
+        if (opaque.Children.Count > 0) visibleScene.Children.Insert(opaqueSceneGroups++, MakePhaseGroup(opaque, layoutId));
+        if (transparent.Children.Count > 0) visibleScene.Children.Add(MakePhaseGroup(transparent, layoutId));
         var first = sceneBounds.IsEmpty;
         sceneBounds.Union(bounds);
         terrainBounds.Union(terrain);
@@ -193,14 +248,17 @@ public partial class MapPreview
         var transparent = new Model3DGroup();
         var terrainBounds = Rect3D.Empty;
         long triangleCount = 0;
-        var batches = new Dictionary<(DiffuseMaterial Material, bool TwoSided, bool Terrain, bool UsesAlpha), SceneMesh>();
+        var batches = new Dictionary<(DiffuseMaterial Material, bool TwoSided, bool Terrain, bool UsesAlpha, bool HasNormals), SceneMesh>();
         foreach (var instance in instances)
         {
             token.ThrowIfCancellationRequested();
+            var target = new ScenePickTarget(instance);
             materials.TryGetValue(instance.ModelPath, out var modelMaterials);
             var foliage = IsFoliage(instance.ModelPath);
             var fallback = instance.IsTerrain ? TerrainMaterial : foliage ? FoliageMaterial : SceneryMaterial;
             var reverseWinding = instance.Transform.GetDeterminant() < 0;
+            var invertible = Matrix4x4.Invert(instance.Transform, out var inverse);
+            var normalMatrix = Matrix4x4.Transpose(inverse);
             foreach (var sourceMesh in models[instance.ModelPath])
             {
                 var mesh = sourceMesh;
@@ -224,7 +282,8 @@ public partial class MapPreview
                 var alpha = clipped ? GameMaterialAlphaMode.Opaque : info?.AlphaMode ?? GameMaterialAlphaMode.Opaque;
                 var usesAlpha = texture != null && alpha != GameMaterialAlphaMode.Opaque;
                 var material = texture == null ? fallback : GetSurface(texture, alpha, PreviewSurfaceMaterial.CutoffByte(info!), surfaces);
-                var key = (Material: material, TwoSided: texture == null || foliage || usesAlpha || clipped, Terrain: instance.IsTerrain, UsesAlpha: usesAlpha);
+                var key = (Material: material, TwoSided: texture == null || foliage || usesAlpha || clipped, Terrain: instance.IsTerrain,
+                    UsesAlpha: usesAlpha, HasNormals: invertible && mesh.Normals.Length == mesh.Positions.Length);
                 if (!batches.TryGetValue(key, out var batch))
                     batches.Add(key, batch = new SceneMesh());
                 if (batch.Indices.Count != 0 &&
@@ -238,13 +297,23 @@ public partial class MapPreview
                 for (var vertex = 0; vertex < mesh.Positions.Length; vertex++)
                 {
                     var transformed = Vector3.Transform(mesh.Positions[vertex], instance.Transform);
-                    batch.Points.Add(new Point3D(transformed.X, transformed.Y, transformed.Z));
+                    var point = new Point3D(transformed.X, transformed.Y, transformed.Z);
+                    batch.Points.Add(point);
+                    target.Bounds.Union(point);
+                    if (key.HasNormals)
+                    {
+                        var normal = Vector3.TransformNormal(mesh.Normals[vertex], normalMatrix);
+                        var length = normal.Length();
+                        normal = float.IsFinite(length) && length > 0 ? normal / length : Vector3.Zero;
+                        batch.Normals.Add(new Vector3D(normal.X, normal.Y, normal.Z));
+                    }
                     if (texture != null)
                     {
                         var uv = mesh.TextureCoordinates[vertex];
                         batch.Uv.Add(new Point(float.IsFinite(uv.X) ? uv.X : 0, float.IsFinite(uv.Y) ? uv.Y : 0));
                     }
                 }
+                batch.Ranges.Add(new(batch.Points.Count, target));
                 for (var i = 0; i < indices.Length; i += 3)
                 {
                     batch.Indices.Add(start + indices[i]);
@@ -270,7 +339,9 @@ public partial class MapPreview
     {
         if (mesh.Indices.Count == 0) return Rect3D.Empty;
         var geometry = new MeshGeometry3D { Positions = new Point3DCollection(mesh.Points), TriangleIndices = new Int32Collection(mesh.Indices) };
+        pickRanges.Add(geometry, mesh.Ranges.ToArray());
         if (mesh.Uv.Count != 0) geometry.TextureCoordinates = new PointCollection(mesh.Uv);
+        if (mesh.Normals.Count != 0) geometry.Normals = new Vector3DCollection(mesh.Normals);
         group.Children.Add(new GeometryModel3D(geometry, material) { BackMaterial = twoSided ? material : null });
         return geometry.Bounds;
     }
@@ -299,8 +370,10 @@ public partial class MapPreview
 
     private sealed class SceneMesh
     {
+        public List<VertexRange> Ranges { get; } = new();
         public List<Point3D> Points { get; } = new();
         public List<int> Indices { get; } = new();
         public List<Point> Uv { get; } = new();
+        public List<Vector3D> Normals { get; } = new();
     }
 }

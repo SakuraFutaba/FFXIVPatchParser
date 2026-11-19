@@ -1,0 +1,19 @@
+{
+  "sheet": "WeaponTimeline",
+  "schemaHash": "12CA26BA37C9FEF6A29621F5299C85BE7EB69540B224475B239324A05D05ECD4",
+  "defaultColumn": "File",
+  "definitions": [
+    {
+      "index": 0,
+      "name": "File"
+    },
+    {
+      "index": 1,
+      "name": "NextWeaponTimeline",
+      "converter": {
+        "type": "link",
+        "target": "WeaponTimeline"
+      }
+    }
+  ]
+}

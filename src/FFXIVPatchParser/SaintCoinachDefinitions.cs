@@ -87,7 +87,9 @@ public sealed class SaintCoinachDefinitions
             if (count < 0 || count > 65536) throw new InvalidDataException("重复定义数量越界。");
             var inner = Flatten(node.GetProperty("definition"), depth + 1).ToArray();
             if ((long)count * inner.Length > 65536) throw new InvalidDataException("重复定义过大。");
-            for (var i = 0; i < count; i++) foreach (var field in inner) yield return field with { Name = field.Name + $"[{i}]" };
+            for (var i = 0; i < count; i++)
+                foreach (var field in inner)
+                    yield return field.Name.Length == 0 ? field : field with { Name = field.Name + $"[{i}]" };
         }
         else if (type is "single" or null)
             yield return new(0, node.TryGetProperty("name", out var n) ? n.GetString() ?? "" : "", node.TryGetProperty("converter", out var converter) ? converter.Clone() : null);

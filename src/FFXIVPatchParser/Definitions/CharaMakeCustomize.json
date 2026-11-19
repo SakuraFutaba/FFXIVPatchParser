@@ -1,0 +1,11 @@
+{
+  "sheet": "CharaMakeCustomize",
+  "schemaHash": "B3CADFBD2C166E336D6FA7881B56DC290FBEA6BDC407351692FBC734AFAEE287",
+  "definitions": [
+    { "index": 0, "name": "FeatureID" },
+    { "index": 1, "name": "Icon", "converter": { "type": "icon" } },
+    { "index": 3, "name": "IsPurchasable" },
+    { "index": 5, "name": "HintItem", "converter": { "type": "link", "target": "Item" } }
+  ]
+}
+

@@ -1,0 +1,36 @@
+{
+  "sheet": "Item",
+  "schemaHash": "AAE52A840EBC05ED41E56A4B23210FC63062405D2911DF669024C2DCF94F4E7D",
+  "defaultColumn": "Name",
+  "definitions": [
+    {
+      "index": 9,
+      "name": "Name"
+    },
+    {
+      "index": 10,
+      "name": "Icon",
+      "converter": { "type": "icon" }
+    },
+    {
+      "index": 17,
+      "name": "EquipSlotCategory",
+      "converter": {
+        "type": "link",
+        "target": "EquipSlotCategory"
+      }
+    },
+    {
+      "index": 28,
+      "name": "DyeCount"
+    },
+    {
+      "index": 47,
+      "name": "ModelMain"
+    },
+    {
+      "index": 48,
+      "name": "ModelSub"
+    }
+  ]
+}

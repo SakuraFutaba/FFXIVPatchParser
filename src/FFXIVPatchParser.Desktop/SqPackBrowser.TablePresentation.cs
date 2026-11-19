@@ -62,10 +62,10 @@ public partial class SqPackBrowser
     {
         if (tablePage is not { } page) return;
 
-        ApplyTableColumnSizing(page);
+        ApplyTableColumnSizing(page, viewportOnly: true);
     }
 
-    private void ApplyTableColumnSizing(TablePage page)
+    private void ApplyTableColumnSizing(TablePage page, bool viewportOnly = false)
     {
         var iconOnly = Enumerable.Range(0, TableGrid.Columns.Count - 1).Select(index => IconOnlyColumn(page, index)).ToArray();
         TableColumnSizing.Apply(TableGrid, page.Rows, (row, displayIndex) =>
@@ -76,7 +76,7 @@ public partial class SqPackBrowser
             var showText = !iconOnly[displayIndex - 1];
             var iconWidth = related?.PreviewIconPath == null ? 0 : TableIconSize + (showText ? TableIconSpacing : 0);
             return (showText ? row.GridValues[index] : "", iconWidth, related?.IsLink == true);
-        });
+        }, viewportOnly);
     }
 
     private static Style TableValueStyle(int index, bool hasLinks)

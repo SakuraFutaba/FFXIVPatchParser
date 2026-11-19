@@ -4,6 +4,8 @@
 
 本项目用 Lumina 7.7.2 从客户端 SqPack 读取 Excel 资源。读取一张陌生表时，先确定构建号、语言和表类型，再按 EXH 的列编号和偏移解码 EXD。字段名和引用关系可以随后叠加。 [项目依赖锁定](../src/FFXIVPatchParser/packages.lock.json) · [Lumina Excel 读取接口](https://lumina.xiv.dev/api/Lumina.Excel.ExcelModule.html)
 
+桌面版「重置列宽」会取每列的标题与当前可见单元格所需宽度中的较大值。标题的筛选图标、文字样式和单元格图标都参与计算。表头所需宽度也是每列的最小宽度，分页、恢复视图和手动调整列宽都会保留完整标题。较宽的列可用横向滚动查看。
+
 ## 从 EXL 到 EXD
 
 | 资源 | 内容 | 项目里的用法 |

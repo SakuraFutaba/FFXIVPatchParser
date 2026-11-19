@@ -21,6 +21,9 @@
   <SolidColorBrush x:Key="ShellAccent" Color="#3065AA"/>
   <SolidColorBrush x:Key="ShellTrack" Color="#A5B5C9"/>
   <Style x:Key="{x:Static SystemParameters.FocusVisualStyleKey}" BasedOn="{StaticResource ControlFocusVisual}"/>
+  <Style TargetType="ScrollViewer">
+    <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+  </Style>
   <Style TargetType="Window">
     <Setter Property="FontFamily" Value="Microsoft YaHei UI"/>
     <Setter Property="FontSize" Value="13"/>
@@ -30,6 +33,7 @@
   </Style>
   <Style TargetType="Button">
     <Setter Property="Padding" Value="12,6"/>
+    <Setter Property="HorizontalContentAlignment" Value="Center"/>
     <Setter Property="Margin" Value="0,0,8,0"/>
     <Setter Property="Background" Value="{StaticResource WorkspaceSurface}"/>
     <Setter Property="BorderBrush" Value="{StaticResource Border}"/>
@@ -44,7 +48,7 @@
             <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
                     BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="6"/>
             <Border x:Name="Highlight" CornerRadius="6" Background="Transparent" IsHitTestVisible="False"/>
-            <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="Center" VerticalAlignment="Center"
+            <ContentPresenter Margin="{TemplateBinding Padding}" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="Center"
                               RecognizesAccessKey="True"/>
           </Grid>
           <ControlTemplate.Triggers>

@@ -211,11 +211,13 @@ public partial class SqPackFileTree : UserControl
     private void RevealFile(SqPackFileTreeIndex.Folder folder, Node[] items, SqPackFileSystemEntry file)
     {
         var positions = new List<int>();
-        foreach (var segment in selectedFolder.Split('/'))
+        while (!string.Equals(folder.Path, selectedFolder, StringComparison.OrdinalIgnoreCase))
         {
-            var position = folder.Folders.FindIndex(child => child.Name.Equals(segment, StringComparison.OrdinalIgnoreCase));
+            var position = folder.Folders.FindIndex(child =>
+                string.Equals(child.Path, selectedFolder, StringComparison.OrdinalIgnoreCase) ||
+                selectedFolder.StartsWith(child.Path + "/", StringComparison.OrdinalIgnoreCase));
             if (position < 0) return;
-            folder = folder.Folders[position];
+            folder = CompactFolder(folder.Folders[position]);
             if (!expanded.Contains(folder.Path)) return;
             positions.Add(position);
         }
@@ -229,22 +231,31 @@ public partial class SqPackFileTree : UserControl
         });
     }
 
-    private sealed class Node : INotifyPropertyChanged
+    private static SqPackFileTreeIndex.Folder CompactFolder(SqPackFileTreeIndex.Folder folder)
+    {
+        while (folder.Files.Count == 0 && folder.Folders.Count == 1) folder = folder.Folders[0];
+        return folder;
+    }
+    private sealed class Node : INotifyPropertyChanged, IPathTreeRow
     {
         private static readonly object[] PendingChildren = [new object()];
         private readonly SqPackFileTree owner;
         private readonly SqPackFileTreeIndex.Folder? folder;
         private readonly bool expandMatches;
         private readonly string? folderDescription;
+        private readonly string? collapsedLabel;
         private object[]? children;
         private bool expanded;
 
         public Node(SqPackFileTree owner, SqPackFileTreeIndex.Folder folder, bool expandMatches)
         {
             this.owner = owner;
+            var first = folder;
+            folder = CompactFolder(folder);
             this.folder = folder;
             this.expandMatches = expandMatches;
-            Label = folder.Name;
+            Label = first.Name + folder.Path[first.Path.Length..];
+            if (!ReferenceEquals(first, folder)) collapsedLabel = first.Name;
             folderDescription = $"{folder.Path} · {folder.FileCount:N0} 个文件";
             expanded = expandMatches || owner.expanded.Contains(folder.Path);
         }
@@ -259,7 +270,9 @@ public partial class SqPackFileTree : UserControl
             IsSelected = entry == owner.selected;
         }
 
+        public bool IsDirectory => folder != null;
         public string Label { get; }
+        public string DisplayLabel => expanded ? Label : collapsedLabel ?? Label;
         public string Description => Entry is { } file
             ? file.KnownPath == null ? file.Locator : $"{file.KnownPath}\n{file.Locator}" : folderDescription ?? "";
         public string ParentPath { get; } = "";
@@ -278,6 +291,8 @@ public partial class SqPackFileTree : UserControl
                 if (value) owner.expanded.Add(folder.Path);
                 else owner.expanded.Remove(folder.Path);
                 PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(Children)));
+                if (collapsedLabel != null)
+                    PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DisplayLabel)));
             }
         }
 

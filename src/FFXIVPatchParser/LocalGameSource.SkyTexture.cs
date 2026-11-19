@@ -8,6 +8,7 @@ namespace FFXIVPatchParser;
 public sealed class GameSkyTexture
 {
     private readonly byte[] pixels;
+    public ReadOnlyMemory<byte> BgraPixels => pixels;
     public string Path { get; }
     public const int Width = 8;
     public const int Height = 32;
@@ -43,6 +44,22 @@ public sealed class GameSkyTexture
 
 public sealed partial class LocalGameSource
 {
+    private byte[]? nativeSkyProgram;
+
+    /// <summary>取得已核对资源绑定的 Sky 像素程序。包更新时须重新核对输入布局。</summary>
+    public ReadOnlyMemory<byte> ReadNativeSkyProgram()
+    {
+        lock (gate)
+        {
+            if (nativeSkyProgram != null) return nativeSkyProgram;
+            var data = game.GetFile<FileResource>("shader/sm5/posteffect/Sky.shcd")?.Data;
+            nativeSkyProgram = data != null && Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(data)) ==
+                "3A6150C72BB530C28255B1632E81C5767801CD9EB939E633E2E41D8DBE14CBDA"
+                ? data.AsSpan(124, 1856).ToArray() : [];
+            return nativeSkyProgram;
+        }
+    }
+
     private readonly Dictionary<uint, GameSkyTexture?> experimentalSkyTextures = [];
 
     /// <summary>只接受本地实测的8×32×24 BGRA体积纹理；缺失或格式不符返回null，调用方保留原预览。</summary>

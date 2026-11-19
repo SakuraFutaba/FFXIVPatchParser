@@ -1,0 +1,32 @@
+{
+  "sheet": "CharaMakeType",
+  "schemaHash": "E5EABA3BE172732DC154DBE6CC9053C0B440E27DE656D0C551FE719BA8446223",
+  "definitions": [
+    {
+      "index": 0,
+      "name": "Race",
+      "converter": {
+        "type": "link",
+        "target": "Race"
+      }
+    },
+    {
+      "index": 1,
+      "name": "Tribe",
+      "converter": {
+        "type": "link",
+        "target": "Tribe"
+      }
+    },
+    {
+      "index": 2,
+      "name": "Gender"
+    },
+    { "index": 87, "type": "repeat", "count": 28, "definition": { "name": "SubMenuNum" } },
+    { "index": 171, "type": "repeat", "count": 28, "definition": { "name": "Customize" } },
+    { "index": 201, "name": "SubMenuParam[2][0]" },
+    { "index": 229, "name": "SubMenuParam[2][1]" },
+    { "index": 257, "name": "SubMenuParam[2][2]" },
+    { "index": 285, "name": "SubMenuParam[2][3]" }
+  ]
+}

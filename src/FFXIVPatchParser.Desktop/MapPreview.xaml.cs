@@ -98,6 +98,8 @@ public partial class MapPreview : UserControl
         catalogueRequest?.Cancel();
         previewRequest?.Cancel();
         await Task.WhenAll(catalogueLoad, previewLoad);
+        battleLogRequest?.Cancel();
+        try { await battleLogLoad; } catch (OperationCanceledException) { }
     }
 
     private void PageVisibilityChanged(object sender, DependencyPropertyChangedEventArgs e)
@@ -228,6 +230,10 @@ public partial class MapPreview : UserControl
 
     private void ClearPreview()
     {
+        ClearRecording();
+        battleLogRequest?.Cancel();
+        BattleResources.ItemsSource = null;
+        BattleResourceDetails.Clear();
         RememberMapCamera();
         ClearEnvironment();
         MapEffectControls.Visibility = Visibility.Collapsed;
@@ -235,6 +241,8 @@ public partial class MapPreview : UserControl
         previewComplete = false;
         displayedPath = null;
         visibleScene.Children.Clear();
+        FocusedObject.Text = "";
+        FocusedObject.ToolTip = null;
         opaqueSceneGroups = 0;
         sceneBounds = terrainBounds = Rect3D.Empty;
         SetSceneEntrance(null);

@@ -22,13 +22,16 @@ flowchart LR
 | SqPack 索引怎样定位文件，图片和音频 Diff 的候选怎样筛出来？ | [SqPack 与媒体](sqpack-media.md) |
 | ATEX 特效贴图怎样读取和导出？ | [ATEX 特效贴图](sqpack-media.md#atex-特效贴图) |
 | ULD 怎样描述界面坐标、纹理切片、组件和时间线？ | [ULD 界面资源与静态合成](uld.md) |
+| 怎样验证 AVFX 的调度、发射和纹理引用？ | [AVFX 调度与粒子预览](sqpack-media.md#avfx-调度与粒子预览) |
 | `Channeling.File` 怎样定位游戏里的连线特效？ | [Channeling 表与连线特效](sqpack-media.md#channeling-表与连线特效) |
 | EXL、EXH、EXD 各保存什么，Raw 快照怎样保留字段和子行？ | [Excel 表格与 Raw 快照](excel.md) |
 | 新旧表的数据来自哪里，字段关联和行列差异怎样比较？ | [表格 Diff 与关联](table-diff.md) |
 | 如何用中文名字找宠物、坐骑、配饰或 NPC 的模型？ | [模型目录与 NPC 名称](model-catalog.md) |
 | MDL 的外观由哪些文件决定，怪物的 Idle 藏在哪里？ | [模型、材质与动作](models-animation.md) |
+| 角色肤色与发色从哪读，PAP 怎样查到技能和情感动作名称？ | [角色配色](models-animation.md#角色配色与装备基色) · [PAP 动作名称](models-animation.md#从-pap-路径查动作名称) |
 | 地图名称、区域 ID、3D 布局和二维贴图怎样对应？ | [地图目录与场景](territories.md) |
 | 模型怎样选择着色器，树叶和贴花的透明信息存在哪里？ | [Shader 资源、模型材质与预览](shaders.md) |
+| 怎样在国服 EXE 定位函数，核对 MapEffect、TMB、AVFX 或 ULD 的运行规则？ | [客户端执行逻辑与地址核对](client-runtime.md) |
 | 怎样重做一次验证，判断读到了正确的构建、行或资源？ | [复现实验与验证](verification.md) |
 
 ## 几个可直接用上的发现

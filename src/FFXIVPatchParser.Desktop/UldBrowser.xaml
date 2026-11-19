@@ -69,6 +69,7 @@
           </DockPanel>
           <DockPanel x:Name="TimelineControls" Grid.Row="1" Margin="8,0,8,8" IsEnabled="False">
             <TextBlock DockPanel.Dock="Left" Text="时间线" VerticalAlignment="Center" Margin="0,0,8,0"/>
+            <Button x:Name="PlayTimelineButton" DockPanel.Dock="Left" Content="播放" Click="ToggleTimelinePlayback" Margin="0,0,6,0" ToolTip="按每秒 30 帧播放当前布局时间线"/>
             <Button DockPanel.Dock="Left" Style="{StaticResource PreviousItemButton}" Click="PreviousFrame" ToolTip="上一帧" AutomationProperties.Name="上一帧" Margin="0,0,6,0"/>
             <Button x:Name="ResetTimelineButton" DockPanel.Dock="Right" Content="恢复初始帧" Click="ResetTimeline" Margin="8,0,0,0" ToolTip="清除时间线取样，恢复节点的初始位置、旋转、缩放和透明度"/>
             <TextBlock DockPanel.Dock="Right" x:Name="FrameInfo" Width="104" TextAlignment="Center" VerticalAlignment="Center"/>

@@ -68,7 +68,7 @@ public partial class ModelPreview
         await StartPlaybackAsync();
     }
 
-    private async Task StartPlaybackAsync()
+    private async Task StartPlaybackAsync(double position = 0, bool running = true)
     {
         if (!IsVisible || source is not { } game || scene is not { } preview || loadedAction is not { } action ||
             PlaybackSlot.SelectedItem is not GameAnimationSlot slot) return;
@@ -90,46 +90,41 @@ public partial class ModelPreview
                 return;
             }
             PlaybackStatus.Text = "正在用 Godbert 采样动作…";
-            var clip = await game.BakeModelAnimationAsync(preview.Path, action.Path, slot.Index, directory, pending.Token, samplingRate: 120, previewVertexCount: preview.Vertices);
+            var clip = await game.BakeModelAnimationAsync(preview.Path, action.Path, slot.Index, directory, pending.Token, samplingRate: 120, previewVertexCount: preview.Vertices, faceModelPath: preview.SourceModel.FaceModelPath);
             pending.Token.ThrowIfCancellationRequested();
             if (!IsVisible || !ReferenceEquals(scene, preview) || !ReferenceEquals(loadedAction, action)) return;
-            // 短片段在启动前准备所有帧，避免播放时后台任务切换占用每帧的时间预算。
+            // 先计算起播位置的姿势，后续按实际显示的帧填充缓存。
             var cacheAllFrames = (preview.Meshes.Sum(mesh => (long)mesh.Geometry.Positions.Count) * 24L + preview.Meshes.Count * 128L) * clip.Frames.Length <= 64L * 1024 * 1024;
             PlaybackStatus.Text = "正在准备动作帧…";
-            LocalGameSource.ModelSkinningBinding? binding = null;
-            var prepared = await Task.Run(() =>
+            var offset = Math.Clamp(position, 0, clip.Duration);
+            var firstFrame = Math.Clamp((int)(offset * clip.FramesPerSecond), 0, clip.Frames.Length - 1);
+            var (binding, firstPose) = await Task.Run(() =>
             {
-                binding = LocalGameSource.CreateModelSkinningBinding(preview.SourceModel, clip);
-                var frames = new Point3DCollection[cacheAllFrames ? clip.Frames.Length : 1][];
-                for (var frame = 0; frame < frames.Length; frame++)
-                {
-                    pending.Token.ThrowIfCancellationRequested();
-                    frames[frame] = PreparePose(preview, clip, frame, binding);
-                }
-                return frames;
+                var skinning = LocalGameSource.CreateModelSkinningBinding(preview.SourceModel, clip);
+                pending.Token.ThrowIfCancellationRequested();
+                return (skinning, PreparePose(preview, clip, firstFrame, skinning));
             }, pending.Token);
             pending.Token.ThrowIfCancellationRequested();
             if (!IsVisible || !ReferenceEquals(scene, preview) || !ReferenceEquals(loadedAction, action)) return;
-            animatedGeometry = preview.Meshes.Select(mesh =>
-            {
-                var geometry = mesh.Geometry.CloneCurrentValue();
-                geometry.Normals = new Vector3DCollection();
-                return geometry;
-            }).ToArray();
+            PrepareAnimatedGeometry(preview);
             playbackClip = clip;
             skinningBinding = binding;
-            recentPoseLimit = (int)Math.Max(1, 64L * 1024 * 1024 / (preview.Meshes.Sum(mesh => (long)mesh.Geometry.Positions.Count) * 24L + preview.Meshes.Count * 128L));
             PlaybackPosition.Maximum = clip.Duration;
             PlaybackPosition.IsEnabled = true;
-            UpdatePlaybackPosition(0);
+            playbackOffset = offset;
+            UpdatePlaybackPosition(playbackOffset);
             // 仅为能完整容纳的片段缓存顶点，避免长动作无限占用内存。
-            poseCache = cacheAllFrames ? prepared : null;
-            ApplyPose(prepared[0]);
+            poseCache = cacheAllFrames ? new Point3DCollection[clip.Frames.Length][] : null;
+            lastFrame = firstFrame;
+            RememberPose(firstFrame, firstPose);
+            ApplyPose(firstPose);
             RenderScene();
-            lastFrame = 0;
-            playbackTime.Restart();
-            CompositionTarget.Rendering += PlaybackTick;
-            UpdatePlaybackStatus("循环播放");
+            if (running)
+            {
+                playbackTime.Restart();
+                CompositionTarget.Rendering += PlaybackTick;
+            }
+            UpdatePlaybackStatus(running ? "循环播放" : "已暂停");
         }
         catch (OperationCanceledException) when (pending.IsCancellationRequested) { }
         catch (Exception ex)
@@ -215,7 +210,12 @@ public partial class ModelPreview
 
     private void RememberPose(int frame, Point3DCollection[] positions)
     {
-        if (poseCache != null || recentPoses.ContainsKey(frame)) return;
+        if (poseCache != null)
+        {
+            poseCache[frame] = positions;
+            return;
+        }
+        if (recentPoses.ContainsKey(frame)) return;
         while (recentPoses.Count >= recentPoseLimit && recentPoseOrder.TryDequeue(out var oldest))
             recentPoses.Remove(oldest);
         recentPoses.Add(frame, positions);
@@ -226,7 +226,9 @@ public partial class ModelPreview
     {
         if (playbackClip is not { } clip) return;
         var name = (PlaybackSlot.SelectedItem as GameAnimationSlot)?.Name ?? "动作";
-        PlaybackStatus.Text = $"{name} · {clip.Duration:0.00} 秒 · 采样 {clip.FramesPerSecond:0} fps · {state}";
+        var layer = clip.IsFaceAnimation ? "面部表情" : clip.FaceLayerStatus;
+        PlaybackStatus.Text = $"{name} · {clip.Duration:0.00} 秒 · 采样 {clip.FramesPerSecond:0} fps · {state}" +
+            (layer == null ? "" : " · " + layer);
         PlaybackStatus.ToolTip = "动作采样率与窗口刷新率分别计算；实际呈现受显示器、WPF 和模型开销影响。";
     }
 
@@ -275,22 +277,79 @@ public partial class ModelPreview
         for (var mesh = 0; mesh < geometries.Length; mesh++) geometries[mesh].Positions = positions[mesh];
     }
 
-    private async void StartDefaultIdle()
+    private async Task LoadDefaultAnimationAsync(PreviewScene preview)
     {
-        if (scene is not { } preview || !IsVisible) return;
         try
         {
-            var match = System.Text.RegularExpressions.Regex.Match(preview.Path,
-                @"^chara/monster/(m\d{4})/obj/body/b\d{4}/model/");
-            if (!match.Success || GodbertAnimationSettings.ReadDirectory() == null) return;
-            await OpenAnimation($"chara/monster/{match.Groups[1].Value}/animation/a0001/bt_common/resident/monster.pap", autoPlayIdle: true);
+            if (source is not { } game || !IsVisible || GodbertAnimationSettings.ReadDirectory() == null) return;
+            var playerPose = usePlayerPose;
+            var path = await Task.Run(() => game.FindDefaultModelAnimation(preview.Path, playerPose: playerPose));
+            if (path != null && IsVisible && ReferenceEquals(scene, preview) && requestedActionPath == null)
+                await OpenAnimation(path);
         }
         catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException)
         {
-            PlaybackStatus.Text = "无法读取 Godbert 配置 · " + ex.Message;
+            if (ReferenceEquals(scene, preview)) PlaybackStatus.Text = "无法读取默认动作 · " + ex.Message;
         }
+        finally { if (IsVisible && ReferenceEquals(scene, preview)) ActionListExpanded(ActionList, new RoutedEventArgs()); }
     }
 
+    private void PrepareAnimatedGeometry(PreviewScene preview)
+    {
+        animatedGeometry = preview.Meshes.Select(mesh =>
+        {
+            var geometry = mesh.Geometry.CloneCurrentValue();
+            geometry.Normals = new Vector3DCollection();
+            return geometry;
+        }).ToArray();
+        var poseBytes = preview.Meshes.Sum(mesh => (long)mesh.Geometry.Positions.Count) * 24L + preview.Meshes.Count * 128L;
+        recentPoseLimit = (int)Math.Max(1, 64L * 1024 * 1024 / Math.Max(1L, poseBytes));
+    }
+    private void ShowCharacterSceneWithPlayback(PreviewScene preview)
+    {
+        var clip = playbackClip;
+        var running = playbackTime.IsRunning;
+        var seconds = PlaybackPosition.Value;
+        var loading = playbackBake != null;
+        var faceChanged = scene?.SourceModel.FaceModelPath != preview.SourceModel.FaceModelPath;
+        StopPlayback(restoreScene: false);
+        ShowScene(preview, startIdle: false);
+        if (clip != null && faceChanged)
+        {
+            _ = StartPlaybackAsync(seconds, running);
+            return;
+        }
+        if (clip == null)
+        {
+            if (loading) _ = StartPlaybackAsync();
+            return;
+        }
+        try
+        {
+            skinningBinding = LocalGameSource.CreateModelSkinningBinding(preview.SourceModel, clip);
+            PrepareAnimatedGeometry(preview);
+            playbackClip = clip;
+            playbackOffset = seconds;
+            lastFrame = Math.Clamp((int)(seconds * clip.FramesPerSecond), 0, clip.Frames.Length - 1);
+            ApplyPose(PreparePose(preview, clip, lastFrame, skinningBinding));
+            RenderScene();
+            PlaybackPosition.Maximum = clip.Duration;
+            PlaybackPosition.IsEnabled = true;
+            UpdatePlaybackPosition(seconds);
+            if (running)
+            {
+                playbackTime.Restart();
+                CompositionTarget.Rendering += PlaybackTick;
+            }
+            UpdatePlaybackStatus(running ? "循环播放" : "已暂停");
+            UpdatePlaybackControls();
+        }
+        catch (Exception ex)
+        {
+            StopPlayback();
+            PlaybackStatus.Text = "无法将动作应用到新装配 · " + ex.Message;
+        }
+    }
     private void StopAnimation(object sender, RoutedEventArgs e)
     {
         StopPlayback();

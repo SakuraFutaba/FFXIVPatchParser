@@ -82,7 +82,7 @@
                    TextTrimming="CharacterEllipsis" AutomationProperties.LiveSetting="Polite"/>
       </DockPanel>
       <Border x:Name="MapSurface" Grid.Row="1" Background="#1E2938" CornerRadius="6" ClipToBounds="True" Focusable="True"
-              FocusVisualStyle="{x:Null}" AutomationProperties.Name="3D 地图视口">
+              FocusVisualStyle="{x:Null}" PreviewMouseDown="FocusSceneObject" AutomationProperties.Name="3D 地图视口">
         <Grid ClipToBounds="True" SizeChanged="ResizeMapScene">
           <Viewport3D x:Name="EnvironmentSkyViewport" IsHitTestVisible="False" Visibility="Collapsed">
             <Viewport3D.Camera>
@@ -108,7 +108,8 @@
           </Viewport3D>
           <TextBlock x:Name="EmptyScene" Text="选择一个区域查看 3D 场景" HorizontalAlignment="Center"
                      VerticalAlignment="Center" Foreground="#C0CFDF" TextWrapping="Wrap" Margin="24"/>
-          <TextBlock x:Name="CameraHelp" Text="W/S 前后 · A/D 转向 · 鼠标键+A/D 横移 · 左右键同按前进&#10;Shift 加速 · Ctrl 减速 · 空格上升 · Q 下降" Visibility="Collapsed"
+          <TextBlock x:Name="FocusedObject" HorizontalAlignment="Left" VerticalAlignment="Top" Margin="10,6" Foreground="#E1EAF6"/>
+          <TextBlock x:Name="CameraHelp" Text="双击物体聚焦 · 左键拖动环绕 · 中键拖动平移&#10;W/S 前后 · A/D 转向 · 鼠标键+A/D 横移 · 左右键同按前进&#10;Shift 加速 · Ctrl 减速 · 空格上升 · Q 下降" Visibility="Collapsed"
                      IsHitTestVisible="False" VerticalAlignment="Bottom" Foreground="#E1EAF6" Margin="10,6" TextWrapping="Wrap"/>
         </Grid>
       </Border>
@@ -158,7 +159,12 @@
               <Button x:Name="NextWeatherButton" Grid.Column="2" Style="{StaticResource NextItemButton}" Margin="4,0,0,0" IsEnabled="False"
                       Click="NextWeather" ToolTip="下一种天气" AutomationProperties.Name="下一种天气"/>
             </Grid>
-            <TextBlock x:Name="EnvironmentTimeLabel" Margin="0,6,0,0"/>
+            <DockPanel Margin="0,6,0,0">
+              <CheckBox x:Name="PlayEnvironmentTime" DockPanel.Dock="Right" Content="播放昼夜"
+                        ToolTip="按艾欧泽亚时间推进当前天气的环境轨道" Checked="StartEnvironmentClock" Unchecked="StopEnvironmentClock"
+                        IsVisibleChanged="EnvironmentClockVisibilityChanged"/>
+              <TextBlock x:Name="EnvironmentTimeLabel" VerticalAlignment="Center"/>
+            </DockPanel>
             <Slider x:Name="EnvironmentTime" Minimum="0" Maximum="24" Value="12" TickFrequency="1" ValueChanged="EnvironmentTimeChanged" AutomationProperties.Name="环境时间"/>
             <CheckBox x:Name="ExperimentalSky" Content="实验性游戏天空纹理" IsChecked="True" Margin="0,5,0,4"
                       Checked="ShowExperimentalSkyChanged" Unchecked="ShowExperimentalSkyChanged"
@@ -169,6 +175,23 @@
             <TextBlock Text="MapEffect 资源绑定" FontWeight="SemiBold"/>
             <ComboBox x:Name="MapEffectChoice" DisplayMemberPath="Label" SelectionChanged="MapEffectSelectionChanged" Margin="0,6,0,6" AutomationProperties.Name="MapEffect 目标"/>
             <TextBox x:Name="MapEffectDetail" IsReadOnly="True" TextWrapping="Wrap" BorderThickness="0" Background="Transparent" Padding="0" AutomationProperties.Name="MapEffect 绑定详情"/>
+            <ComboBox x:Name="PhaseTimeline" DisplayMemberPath="Label" SelectionChanged="PreviewPhaseTimeline"
+                      AutomationProperties.Name="预览场地显隐" Margin="0,4,0,0" Visibility="Collapsed"/>
+            <Expander Header="战斗时间线与特效资源" Margin="0,6,0,0">
+              <StackPanel>
+                <Button Content="读取 ACT 事件日志…" Click="LoadRecording" Margin="0,4"/>
+                <ComboBox x:Name="RecordingEvents" DisplayMemberPath="Label" SelectionChanged="SelectRecordedEvent"
+                          AutomationProperties.Name="最近一次入场的 MapEffect 事件"/>
+                <Button x:Name="RecordingPlay" Content="播放事件" IsEnabled="False" Click="ToggleRecording"/>
+                <TextBlock x:Name="RecordingStatus" TextWrapping="Wrap"/>
+                <Button x:Name="ReadBattleLogButton" Content="读取 ResLogger2 日志…" Click="ReadBattleLog" Margin="0,4,0,4"/>
+                <ComboBox x:Name="BattleResources" AutomationProperties.Name="场地资源" DisplayMemberPath="Path"
+                          SelectionChanged="BattleResourceChanged"/>
+                <TextBox x:Name="BattleResourceDetails" IsReadOnly="True" TextWrapping="Wrap" MaxHeight="200"
+                         VerticalScrollBarVisibility="Auto" AutomationProperties.Name="场地资源路径及静态引用"/>
+                <Button Content="预览特效" Click="OpenBattleEffect" Margin="0,4,0,0"/>
+              </StackPanel>
+            </Expander>
           </StackPanel>
           <ItemsControl x:Name="MapFields" Margin="0,8,0,0">
             <ItemsControl.ItemTemplate>

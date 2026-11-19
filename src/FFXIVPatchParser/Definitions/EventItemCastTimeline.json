@@ -1,0 +1,14 @@
+{
+  "sheet": "EventItemCastTimeline",
+  "schemaHash": "41B9ED82FF7D7B1650C8898C3E5407F2E088E1242D428ABD0B7636B7B6FAF1B8",
+  "definitions": [
+    {
+      "index": 0,
+      "name": "ActionTimeline",
+      "converter": {
+        "type": "link",
+        "target": "ActionTimeline"
+      }
+    }
+  ]
+}

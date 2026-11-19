@@ -438,7 +438,7 @@ public partial class SqPackBrowser : UserControl
         TableGrid.FrozenColumnCount = 0;
         TableGrid.Columns.Clear();
         ReloadRowsButton.IsEnabled = selectedTable != null;
-        FitTableColumnsButton.IsEnabled = tablePage?.Rows.Count > 0;
+        FitTableColumnsButton.IsEnabled = tablePage != null;
         ClearTableFiltersButton.IsEnabled = columnFilters.Count != 0;
         TableInfo.Text = selectedTable ?? "选择一张表查看完整内容";
         if (tablePage is not { } page) return;

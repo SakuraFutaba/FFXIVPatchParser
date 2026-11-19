@@ -494,9 +494,14 @@ public partial class AudioPreview : UserControl
             ResumePlayback();
             return;
         }
-        if (selected.Loop is not null && selected.Codec != "PCM 16-bit" && FindFfmpeg() is { } ffmpeg)
+        if ((selected.Codec == "HCA" || selected.Loop is not null && selected.Codec != "PCM 16-bit") && FindFfmpeg() is { } ffmpeg)
         {
             await PlayConvertedAsync(ffmpeg, selected);
+            return;
+        }
+        if (selected.Codec == "HCA")
+        {
+            Status.Text = "播放 HCA 需要 FFmpeg。请将 ffmpeg.exe 加入 PATH，或导出 HCA 文件。";
             return;
         }
         PlayButton.IsEnabled = false;
@@ -606,7 +611,7 @@ public partial class AudioPreview : UserControl
             await ConvertToWaveAsync(executable, input, output, current.Token);
             if (!current.IsCancellationRequested && ReferenceEquals(audio, selected) && (IsVisible || KeepPlaybackAlive))
             {
-                if (selected.Loop is not null) OpenPcmPlayer(output, selected, converted: true);
+                if (selected.Codec == "HCA" || selected.Loop is not null) OpenPcmPlayer(output, selected, converted: true);
                 else OpenPlayer(output, converted: true);
             }
         }

@@ -1,0 +1,23 @@
+{
+  "sheet": "ActionTimeline",
+  "schemaHash": "5F9F5C86BF848D53F0959BCAB964FC5E3C5FA59423B20F4AA8754C92C178BA5E",
+  "defaultColumn": "Key",
+  "definitions": [
+    {
+      "index": 4,
+      "name": "Slot"
+    },
+    {
+      "index": 6,
+      "name": "Key"
+    },
+    {
+      "index": 8,
+      "name": "WeaponTimeline",
+      "converter": {
+        "type": "link",
+        "target": "WeaponTimeline"
+      }
+    }
+  ]
+}

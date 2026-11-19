@@ -95,7 +95,7 @@ public sealed partial class LocalGameSource
                 token.ThrowIfCancellationRequested();
                 if (modelRow == 0 || !models.TryGetValue(modelRow, out var row)) return;
                 var type = Number(row[0]); var model = Number(row[1]); var body = Number(row[2]); var variant = Number(row[3]);
-                foreach (var path in Paths(modelRow, type, model, body))
+                foreach (var path in Paths(modelRow, type, model, body).Take(1))
                 {
                     result.Add(new(category, string.IsNullOrWhiteSpace(name) ? $"{sourceSheet} #{sourceId}" : name,
                         sourceSheet, sourceId, modelRow, type, model, body, variant, path, nameSource, nameRowId));

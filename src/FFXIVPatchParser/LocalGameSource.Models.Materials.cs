@@ -15,6 +15,7 @@ public sealed record GameModelMaterial(string Reference, string? Path, string? S
     public GameTexture? SurfaceTexture { get; init; }
     public uint ShaderFlags { get; init; }
     public IReadOnlyDictionary<uint, uint> ShaderKeys { get; init; } = new Dictionary<uint, uint>();
+    internal LocalGameSource.CharacterSurface? CharacterTint { get; init; }
 }
 
 public enum GameMaterialAlphaMode { Opaque, Mask, Blend }
@@ -71,7 +72,8 @@ public sealed partial class LocalGameSource
     }
 
     private GameModelMaterial ReadModelMaterial(string modelPath, string reference, int variant, CancellationToken token,
-        Func<string, GameTexture?>? textureReader = null)
+        Func<string, GameTexture?>? textureReader = null, GameCharacterColors? characterColors = null,
+        Dictionary<(string Path, string Reference), GameModelMaterial>? sharedMaterials = null, (byte First, byte Second) dye = default)
     {
         string? path = null;
         string? shader = null;
@@ -104,7 +106,7 @@ public sealed partial class LocalGameSource
                 var part = human.Groups[2].Value switch { "b" => "body", "f" => "face", "h" => "hair", "t" => "tail", _ => "zear" };
                 var root = $"chara/human/{human.Groups[1].Value}/obj/{part}/{human.Groups[2].Value}{human.Groups[3].Value}/material";
                 candidates.Add($"{root}/v{variant:D4}/{name}");
-                if (part == "body") candidates.Add($"{root}/v0001/{name}");
+                if (part == "body" || variant != 1) candidates.Add($"{root}/v0001/{name}");
                 candidates.Add($"{root}/{name}");
             }
             var equipment = Regex.Match(name, @"^mt_c\d{4}([ea]\d{4})_", RegexOptions.CultureInvariant);
@@ -122,11 +124,14 @@ public sealed partial class LocalGameSource
             byte[] data;
             lock (gate)
             {
+                if (characterColors != null && variant != 1 && modelFolder >= 0)
+                    candidates.Add($"{modelPath[..modelFolder]}/material/v0001/{name}");
                 path = candidates.FirstOrDefault(candidate => game.FileExists(candidate));
                 if (path == null) return new(reference, null, null, [], null, $"找不到材质 {reference}（变体 {variant}）。");
+                if (sharedMaterials != null && sharedMaterials.TryGetValue((path, reference), out var cached)) return cached;
                 data = game.GetFile(path)!.Data;
             }
-            // 先读取稳定的 MTRL 头与字符串表；透明设置随后解析，颜色表不作为漫反射颜色。
+            // 先读取稳定的 MTRL 头与字符串表；着色器的采样器、色表与透明设置随后解析。
             if (data.Length < 16) throw new InvalidDataException("材质头不完整。");
             var stringSize = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(8));
             var shaderOffset = BinaryPrimitives.ReadUInt16LittleEndian(data.AsSpan(10));
@@ -143,7 +148,8 @@ public sealed partial class LocalGameSource
                 textures.Add(ModelString(strings, offset));
             }
             // A normal/mask/specular map must never be presented as a base-color map.
-            var diffuse = (textureReader == null ? null : TerritoryDiffuseSampler(data, stringStart + stringSize, textures))
+            var stringEnd = stringStart + stringSize;
+            var diffuse = TerritoryDiffuseSampler(data, stringEnd, textures)
                 ?? textures.FirstOrDefault(t => t.EndsWith("_d.tex", StringComparison.OrdinalIgnoreCase)
                 || t.EndsWith("_base.tex", StringComparison.OrdinalIgnoreCase));
             token.ThrowIfCancellationRequested();
@@ -151,7 +157,11 @@ public sealed partial class LocalGameSource
             var material = new GameModelMaterial(reference, path, shader, textures, image, image == null
                 ? $"{reference}：无独立漫反射纹理，使用灰模；未模拟游戏材质着色器。"
                 : $"{reference}：使用原始漫反射近似；未模拟染色、法线和游戏材质着色器。");
-            return ReadMaterialAlpha(material, data, stringStart + stringSize, token, textureReader);
+            material = ReadMaterialAlpha(material, data, stringEnd, token, textureReader);
+            if (dye != default || characterColors.HasValue || (textureReader == null && path.StartsWith("chara/", StringComparison.Ordinal)))
+                material = ReadCharacterSurface(material, data, stringEnd, characterColors, token, textureReader, dye);
+            if (sharedMaterials != null) sharedMaterials[(path, reference)] = material;
+            return material;
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException)
         {

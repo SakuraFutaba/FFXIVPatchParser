@@ -1,0 +1,246 @@
+{
+  "sheet": "NpcEquip",
+  "schemaHash": "63DEB8AE0C804D4197B6A796D2EE3507E1E3FB200E301AFAA74514ECBAFB1947",
+  "definitions": [
+    {
+      "index": 0,
+      "name": "ModelMainHand"
+    },
+    {
+      "index": 1,
+      "name": "DyeMainHand",
+      "converter": {
+        "type": "link",
+        "target": "Stain"
+      }
+    },
+    {
+      "index": 2,
+      "name": "Dye2MainHand",
+      "converter": {
+        "type": "link",
+        "target": "Stain"
+      }
+    },
+    {
+      "index": 3,
+      "name": "ModelOffHand"
+    },
+    {
+      "index": 4,
+      "name": "DyeOffHand",
+      "converter": {
+        "type": "link",
+        "target": "Stain"
+      }
+    },
+    {
+      "index": 5,
+      "name": "Dye2OffHand",
+      "converter": {
+        "type": "link",
+        "target": "Stain"
+      }
+    },
+    {
+      "index": 6,
+      "name": "ModelHead"
+    },
+    {
+      "index": 7,
+      "name": "DyeHead",
+      "converter": {
+        "type": "link",
+        "target": "Stain"
+      }
+    },
+    {
+      "index": 8,
+      "name": "Dye2Head",
+      "converter": {
+        "type": "link",
+        "target": "Stain"
+      }
+    },
+    {
+      "index": 11,
+      "name": "ModelBody"
+    },
+    {
+      "index": 12,
+      "name": "DyeBody",
+      "converter": {
+        "type": "link",
+        "target": "Stain"
+      }
+    },
+    {
+      "index": 13,
+      "name": "Dye2Body",
+      "converter": {
+        "type": "link",
+        "target": "Stain"
+      }
+    },
+    {
+      "index": 14,
+      "name": "ModelHands"
+    },
+    {
+      "index": 15,
+      "name": "DyeHands",
+      "converter": {
+        "type": "link",
+        "target": "Stain"
+      }
+    },
+    {
+      "index": 16,
+      "name": "Dye2Hands",
+      "converter": {
+        "type": "link",
+        "target": "Stain"
+      }
+    },
+    {
+      "index": 17,
+      "name": "ModelLegs"
+    },
+    {
+      "index": 18,
+      "name": "DyeLegs",
+      "converter": {
+        "type": "link",
+        "target": "Stain"
+      }
+    },
+    {
+      "index": 19,
+      "name": "Dye2Legs",
+      "converter": {
+        "type": "link",
+        "target": "Stain"
+      }
+    },
+    {
+      "index": 20,
+      "name": "ModelFeet"
+    },
+    {
+      "index": 21,
+      "name": "DyeFeet",
+      "converter": {
+        "type": "link",
+        "target": "Stain"
+      }
+    },
+    {
+      "index": 22,
+      "name": "Dye2Feet",
+      "converter": {
+        "type": "link",
+        "target": "Stain"
+      }
+    },
+    {
+      "index": 23,
+      "name": "ModelEars"
+    },
+    {
+      "index": 24,
+      "name": "DyeEars",
+      "converter": {
+        "type": "link",
+        "target": "Stain"
+      }
+    },
+    {
+      "index": 25,
+      "name": "Dye2Ears",
+      "converter": {
+        "type": "link",
+        "target": "Stain"
+      }
+    },
+    {
+      "index": 26,
+      "name": "ModelNeck"
+    },
+    {
+      "index": 27,
+      "name": "DyeNeck",
+      "converter": {
+        "type": "link",
+        "target": "Stain"
+      }
+    },
+    {
+      "index": 28,
+      "name": "Dye2Neck",
+      "converter": {
+        "type": "link",
+        "target": "Stain"
+      }
+    },
+    {
+      "index": 29,
+      "name": "ModelWrists"
+    },
+    {
+      "index": 30,
+      "name": "DyeWrists",
+      "converter": {
+        "type": "link",
+        "target": "Stain"
+      }
+    },
+    {
+      "index": 31,
+      "name": "Dye2Wrists",
+      "converter": {
+        "type": "link",
+        "target": "Stain"
+      }
+    },
+    {
+      "index": 32,
+      "name": "ModelLeftRing"
+    },
+    {
+      "index": 33,
+      "name": "DyeLeftRing",
+      "converter": {
+        "type": "link",
+        "target": "Stain"
+      }
+    },
+    {
+      "index": 34,
+      "name": "Dye2LeftRing",
+      "converter": {
+        "type": "link",
+        "target": "Stain"
+      }
+    },
+    {
+      "index": 35,
+      "name": "ModelRightRing"
+    },
+    {
+      "index": 36,
+      "name": "DyeRightRing",
+      "converter": {
+        "type": "link",
+        "target": "Stain"
+      }
+    },
+    {
+      "index": 37,
+      "name": "Dye2RightRing",
+      "converter": {
+        "type": "link",
+        "target": "Stain"
+      }
+    }
+  ]
+}

@@ -2,15 +2,25 @@ using System.ComponentModel;
 
 namespace FFXIVPatchParser.Desktop;
 
+internal interface IPathTreeRow
+{
+    string Label { get; }
+    bool IsDirectory { get; }
+}
+
 /// <summary>A data-only tree node. FullPath and Payload retain the selected original leaf identity.</summary>
-public sealed class PathTreeNode : INotifyPropertyChanged
+public sealed class PathTreeNode : INotifyPropertyChanged, IPathTreeRow
 {
     public string FullPath { get; }
     public string Label { get; }
+    public string DisplayLabel => expanded ? Label : CollapsedLabel ?? Label;
     public bool IsDirectory { get; }
     public object? Payload { get; }
     public IReadOnlyList<PathTreeNode> Children { get; }
     public int LeafCount { get; }
+    internal bool CanCompactWithChild { get; init; } = true;
+    internal string? CollapsedLabel { get; init; }
+    internal string[] CompactParents { get; init; } = [];
     internal bool InitialExpansion { get; set; }
     private bool expanded;
     public bool IsExpanded
@@ -21,6 +31,8 @@ public sealed class PathTreeNode : INotifyPropertyChanged
             if (expanded == value) return;
             expanded = value;
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsExpanded)));
+            if (CollapsedLabel != null)
+                PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(DisplayLabel)));
         }
     }
     public event PropertyChangedEventHandler? PropertyChanged;

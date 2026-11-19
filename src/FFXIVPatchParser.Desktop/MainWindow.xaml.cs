@@ -48,12 +48,19 @@ public partial class MainWindow : Window
             if (destination != null) destination.IsChecked = true;
             if (page == SqPackPage.Images) TexturePageTab.IsChecked = true;
         };
+        SqPackView.LocalModelsPanel.CatalogueModeChanged += mode =>
+        {
+            var tab = ModelPageTabs.Children.OfType<RadioButton>().First(item => (string)item.Tag == mode.ToString());
+            tab.IsChecked = true;
+            UpdateModelImportToolbar();
+        };
         SqPackView.MediaControlsChanged += UpdateMediaControls;
         SqPackView.GameVersionChanged += () =>
         {
             SqPackVersion.Text = SqPackView.GameVersionLabel;
             ResourceHexView.RefreshLocalFiles();
             MusicPlayer.SetSource(SqPackView.ConnectedGame);
+            UpdateModelImportToolbar();
         };
         ResourceHexView.GetTargetDirectory = () => SqPackView.ConnectedGamePath ?? SqPackBrowser.RememberedGamePath();
         PreviewMouseDown += DismissCellDetailsOnOutsideClick;
@@ -129,6 +136,8 @@ public partial class MainWindow : Window
         SqPackView.Visibility = page != null ? Visibility.Visible : Visibility.Collapsed;
         PageTitle.Text = title;
         DiffTableHeader.Visibility = DiffView.Visibility;
+        ModelPageTabs.Visibility = page == SqPackPage.Models ? Visibility.Visible : Visibility.Collapsed;
+        UpdateModelImportToolbar();
         ImagePageTabs.Visibility = page == SqPackPage.Images ? Visibility.Visible : Visibility.Collapsed;
         SqPackView.SetTableTabHeader(LocalTableHeader, page == SqPackPage.Tables);
         UpdateMediaControls();
@@ -136,6 +145,25 @@ public partial class MainWindow : Window
 
         static Visibility Visible(RadioButton item) => item.IsChecked == true ? Visibility.Visible : Visibility.Collapsed;
     }
+
+    private async void ModelPageChanged(object sender, RoutedEventArgs e)
+    {
+        if (ready && sender is RadioButton { Tag: string tag } && Enum.TryParse<ModelCatalogueMode>(tag, out var mode))
+            await SqPackView.LocalModelsPanel.SelectCatalogueMode(mode);
+    }
+
+    private void UpdateModelImportToolbar()
+    {
+        CharacterImportToolbar.Visibility = ModelPageTabs.Visibility == Visibility.Visible && CharacterPageTab.IsChecked == true
+            ? Visibility.Visible : Visibility.Collapsed;
+        CharacterImportToolbar.IsEnabled = SqPackView.ConnectedGame != null;
+    }
+
+    private async void ImportModelAppearance(object sender, RoutedEventArgs e) => await SqPackView.LocalModelsPanel.ImportCharacterAppearance();
+
+    private async void ImportModelGearset(object sender, RoutedEventArgs e) => await SqPackView.LocalModelsPanel.ImportCharacterGearset();
+
+    private async void ImportModelTemplate(object sender, RoutedEventArgs e) => await SqPackView.LocalModelsPanel.ImportGlamourDesign();
 
     private void ImagePageChanged(object sender, RoutedEventArgs e)
     {
@@ -385,16 +413,16 @@ public partial class MainWindow : Window
     {
         if (DiffGrid.ItemsSource is not IReadOnlyList<DiffLine> lines) return;
 
-        ApplyDiffColumnSizing(lines);
+        ApplyDiffColumnSizing(lines, viewportOnly: true);
     }
 
-    private void ApplyDiffColumnSizing(IReadOnlyList<DiffLine> lines)
+    private void ApplyDiffColumnSizing(IReadOnlyList<DiffLine> lines, bool viewportOnly = false)
         => TableColumnSizing.Apply(DiffGrid, lines, (line, index) =>
         {
             if (index == 0) return (line.Label, 0, false);
             var cell = line.Cells[index - 1];
             return (cell.Text, 0, cell.IsReference || cell.Spans.Any(span => span.Changed));
-        });
+        }, viewportOnly);
 
     private void RenderDiff(bool updateRelations = true, bool resetWidths = false)
     {
@@ -424,7 +452,7 @@ public partial class MainWindow : Window
             if (row.After != null) lines.Add(MakeLine(row, true, visibleColumns));
         }
         DiffGrid.ItemsSource = lines;
-        FitDiffColumnsButton.IsEnabled = lines.Count > 0;
+        FitDiffColumnsButton.IsEnabled = true;
         ApplyDiffColumnSizing(lines);
         restore();
         DiffEmptyMessage.Visibility = lines.Count == 0 ? Visibility.Visible : Visibility.Collapsed;

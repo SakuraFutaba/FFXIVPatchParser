@@ -28,6 +28,7 @@ public sealed partial class LocalGameSource
             if (!ReferenceEquals(catalogNamedModels, namedModels)) modelLocations.Clear();
             var result = new List<SqPackModelLocation>();
             var requested = containers?.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            ListFileSystemContainers(token);
             foreach (var repository in game.Repositories.Values)
             foreach (var (categoryId, categories) in repository.Categories.OrderBy(pair => pair.Key == 4 ? -1 : pair.Key))
             foreach (var category in categories)
@@ -39,24 +40,16 @@ public sealed partial class LocalGameSource
                 {
                     if (category.GetDat(number) is not { } pack) continue;
                     var container = Path.GetRelativePath(SqPackPath, pack.FullName).Replace('\\', '/');
-                    if (requested is not null && !requested.Contains(container)) continue;
+                    if (!fileSystemPacks!.ContainsKey(container) || (requested is not null && !requested.Contains(container))) continue;
                     if (modelLocations.TryGetValue(container, out var cached)) result.AddRange(includeRange is null ? cached : cached.Where(item => includeRange(item.Container, item.Offset, item.End)));
                     else packs.Add(number, (pack, container));
                 }
 
                 if (packs.Count == 0) continue;
-                var addresses = packs.Keys.ToDictionary(number => number, _ => new Dictionary<long, ulong>());
-                foreach (var hash in category.IndexHashTableEntries?.Keys.AsEnumerable() ?? [])
-                {
-                    token.ThrowIfCancellationRequested();
-                    if (category.TryGetFileDatOffset(hash, out var number, out var offset) && addresses.TryGetValue(number, out var indexed))
-                        indexed.TryAdd(offset, hash);
-                }
-
-                foreach (var (number, (pack, container)) in packs)
+                foreach (var (pack, container) in packs.Values)
                 {
                     progress?.Report("正在扫描模型容器 · " + container);
-                    var found = ScanModelContainer(pack, container, addresses[number], categoryId == 4, token, includeRange);
+                    var found = ScanModelContainer(pack, container, EnumerateFileSystemEntries(container, token), categoryId == 4, token, includeRange);
                     if (includeRange is null) modelLocations.Add(container, found);
                     result.AddRange(found);
                 }
@@ -65,25 +58,36 @@ public sealed partial class LocalGameSource
         }
     }
 
-    private List<SqPackModelLocation> ScanModelContainer(SqPack pack, string container, Dictionary<long, ulong> addresses,
+    private List<SqPackModelLocation> ScanModelContainer(SqPack pack, string container, IReadOnlyList<SqPackFileSystemEntry> indexed,
         bool characterContainer, CancellationToken token, Func<string, long, long, bool>? includeRange)
     {
         using var stream = File.OpenRead(pack.FullName);
         using var reader = new BinaryReader(stream);
-        var indexed = addresses.OrderBy(address => address.Key).ToArray();
         var result = new List<SqPackModelLocation>();
-        for (var i = 0; i < indexed.Length; i++)
+        for (var i = 0; i < indexed.Count; i++)
         {
             token.ThrowIfCancellationRequested();
-            var (offset, hash) = indexed[i];
-            if (offset < 0 || offset > stream.Length - 24) throw new InvalidDataException("SqPack 索引偏移越界。");
-            var end = i + 1 < indexed.Length ? indexed[i + 1].Key : stream.Length;
+            var entry = indexed[i];
+            var offset = entry.Offset;
+            var hash = entry.Hash;
+            var path = entry.KnownPath;
+            var ambiguous = false;
+            while (i + 1 < indexed.Count && indexed[i + 1].Offset == offset)
+            {
+                var alias = indexed[++i].KnownPath;
+                if (alias is null) continue;
+                if (path is not null && path != alias) ambiguous = true;
+                path ??= alias;
+            }
+            var end = i + 1 < indexed.Count ? indexed[i + 1].Offset : stream.Length;
             if (includeRange is not null && !includeRange(container, offset, end)) continue;
             stream.Position = offset + 4;
             if (reader.ReadUInt32() != (uint)FileType.Model) continue;
             var addressPath = $"sqpack:{container}@{offset:X}#{hash:X16}";
-            var path = ResolveCatalogModelPath(container, hash, token, out var ambiguous);
-            if (path is null && characterContainer && !ambiguous)
+            if (ambiguous) path = null;
+            if (path is null && !ambiguous && !entry.IsIndex2)
+                path = ResolveCatalogModelPath(container, hash, token, out ambiguous);
+            if (path is null && characterContainer && !ambiguous && !entry.IsIndex2)
             {
                 knownModelNames ??= BuildKnownModelNames(token);
                 path = knownModelNames.GetValueOrDefault(hash);

@@ -25,6 +25,10 @@ Godbert 用 `TerritoryType.Bg` 列出区域。Hyperborea 用同一字段检查 `
 
 首批显示一小块地形，其余地形和背景随后分批提交。场景默认用 LOD 1，大场景优先用 LOD 2，资源没有对应网格时回退到较高细节。预览优先保留地形，背景按层交错加载，最多提交 100 万个三角面和 6,000 个实例。WPF 在后台合并使用同一贴图的网格，最近两个场景保留在内存中。当前支持静态基色贴图。游戏的多层材质混合、水面着色、天气、任务阶段和特效需要另外解析。二维地图显示原始纹理，客户端的地图标记由游戏叠加。
 
+### 双击聚焦场景实例
+
+在 3D 场景双击物体，预览会按命中网格的顶点范围找回原始模型实例，聚焦该实例的世界包围盒。场景仍按材质合批，模型名和 LGB 图层显示在视口。国服简中 `2026.11.03.0000.0000` 的利姆萨·罗敏萨 `s1t1` 实测分别选中 `bgplate/0000` 地形和 `s1t0_b0_snt2` 小型道具。将同一样本的两个实例相隔 300 个单位并放入同一批次，再选第二实例，镜头支点与其中心一致。平移会同步平移支点，原地转向后仍围绕同一支点。 [视口命中与模型实例](../src/FFXIVPatchParser.Desktop/MapPreview.Scene.cs) · [相机](../src/FFXIVPatchParser.Desktop/PreviewCameraController.cs)
+
 ## Hyperborea 的预设坐标
 
 `LoadZone` 用区域 ID 查 `TerritoryType.Bg`，再以这个场景路径为键找 `ZoneInfo`。查找顺序是用户覆盖配置、插件内置 `data.yaml`。坐标来自匹配条目的 `Spawn.X/Y/Z`。插件在开启设置位置且找到坐标时应用它，天气等阶段预设则来自同一条目的 `Phases`。公开仓库的内置文件只有绝巴哈的示例，坐标为 `(0, 0, 0)`。 [查找预设](https://github.com/kawaii/Hyperborea/blob/main/Hyperborea/Utils.cs#L45-L73) · [应用坐标](https://github.com/kawaii/Hyperborea/blob/main/Hyperborea/Utils.cs#L318-L325) · [内置数据](https://raw.githubusercontent.com/kawaii/Hyperborea/main/Hyperborea/data.yaml)
@@ -136,8 +140,28 @@ ENVB v6 的轨道 0、2、13 分别读取日光、云漫反射、雾的时间关
 
 上述子行索引与 BossMod P7S、P10S 的桥索引一致。同一场景可被多个管理表行引用，选择具体行仍需要 Director 上下文。区域 129 的三个布局文件共扫描到 1,557 个顶层共享组，与完整管理表没有匹配；该结果不覆盖其他事件系统和嵌套共享组。
 
-地图详情的「MapEffect 资源绑定」会按当前游戏数据执行上述连接，允许选择匹配目标并复制实例、来源表行与 SGB 路径。它不会切换场景状态。[绑定读取](../src/FFXIVPatchParser/LocalGameSource.MapEffects.cs) · [绑定界面](../src/FFXIVPatchParser.Desktop/MapPreview.MapEffects.cs)
+地图详情的「MapEffect 资源绑定」会按当前游戏数据执行上述连接，允许选择匹配目标并复制实例、来源表行与 SGB 路径。可选时间线与 ACT 回放见下文。[绑定读取](../src/FFXIVPatchParser/LocalGameSource.MapEffects.cs) · [绑定界面](../src/FFXIVPatchParser.Desktop/MapPreview.MapEffects.cs)
 
 区域 1326 登天格斗场还匹配到 `ContentDirectorManagedSG #227.22`，对应的 `LayoutId` 为 `12117802`。当当前 Director 采用管理行 227 时，消息的 `Index=22` 选中这条管理项，再用 `12117802` 匹配 `planmap.lgb` 的同号实例，得到 `sgbg_x6rc_a1_gmc12.sgb`。状态位和时间线字段描述如何改变选中的实例。离线界面核对的是管理表与布局的静态关联，尚缺运行时 Director 所选管理行和状态执行结果。
 
-上游 `ContentDirector` 将消息交给 `ApplyMapEffect(index, state, timelineIndex)`，管理项包含 `LayoutId`；共享组使用 16 项 `TimelineIndices` 查找时间线。状态位如何选中时间线、时间线如何改变实例仍需继续核对，不能把 BossMod 合并的 32 位状态直接当作时间线编号。[ContentDirector 定义](https://github.com/aers/FFXIVClientStructs/blob/main/FFXIVClientStructs/FFXIV/Client/Game/InstanceContent/ContentDirector.cs) · [共享组时间线定义](https://github.com/aers/FFXIVClientStructs/blob/main/FFXIVClientStructs/FFXIV/Client/LayoutEngine/Group/SharedGroupLayoutInstance.cs)
+国服 7.58（`2026.11.03.0000.0000`）静态核对了客户端的 `ApplyMapEffect` 与 `PlayMapEffectTimeline`。后者逐位检查 16 位掩码，在有效槽上启动尚未播放的置位轨道，停止仍在播放的清零轨道。高 16 位为零时，前者跳过立即播放；非零、目标已加载且管理项就绪时优先应用高位掩码，调用失败才尝试低位。低位 `State` 会写入有效管理项。因此不能将高低两部分合并为单一轨道编号，也不能把高位为零解释为隐藏所有模型。[ContentDirector 定义](https://github.com/aers/FFXIVClientStructs/blob/main/FFXIVClientStructs/FFXIV/Client/Game/InstanceContent/ContentDirector.cs) · [共享组时间线定义](https://github.com/aers/FFXIVClientStructs/blob/main/FFXIVClientStructs/FFXIV/Client/LayoutEngine/Group/SharedGroupLayoutInstance.cs)
+
+两份上游地址表在核对时内容一致；国服 EXE 中的函数位置仍需另行核对。见[固定构建、地址对照和 Apricot 入口](client-runtime.md#已复查的入口)。
+
+在这个构建的 SGB1/SCN1，时间线目录和共享组设置分别位于场景数据起点的相对偏移字段 `+0x10` 和 `+0x20`。目录项长 `0x2C`，每项有自己的 ID 和相对名称偏移。共享组设置从 `+5` 开始的 16 个字节按槽保存时间线 ID，零表示空槽。区域 1363 实测有 36 个场地管理绑定；`sgbg_z3oy_a7_flo2a.sgb` 的根实例为 `12357148`，包含两块背景模型，掩码 `0x0001`、`0x0004`、`0x0010` 分别选择 `bg_on`、`bg_off`、`bg_missing`。[共享组时间线读取](../src/FFXIVPatchParser/LocalGameSource.SharedGroupTimelines.cs)
+
+地图页可读取 ACT 原始网络日志。区域行 01 确定区域，257 行提供事件时间、Director、索引与两个状态字段。回放最近一次含事件的入场记录，可暂停、跳转并回溯。当前实现将唯一匹配实例的独立 `bg_on` 和 `bg_off` 请求近似为整组背景几何的显隐；轨道的逐子对象动画、粒子、碰撞与音效仍需逐项执行。实测本场 ResLogger2 日志不含 ACT 事件；单独使用它无法恢复阶段时刻。[ACT 日志格式](https://github.com/OverlayPlugin/cactbot/blob/main/docs/LogGuide.md) · [回放实现](../src/FFXIVPatchParser.Desktop/MapPreview.Recording.cs)
+
+## 妖星乱舞绝境战的本地加载记录
+
+国服简中构建 `2026.11.03.0000.0000` 的这次 ResLogger2 记录有 216,712 行。第 112 行加载 `bg/ex2/05_zon_z3/ome/z3oy/level/z3oy.lvb`，第 214,954 行加载另一场景 `s1ti.lvb`。截取两者之间的记录，按不区分大小写的区域代号 `z3oy` 去重得到 430 条路径，包括 6 个 LGB、68 个 SGB、76 个 MDL、65 个 MTRL、122 个 TEX、37 个 AVFX 和 28 个 TMB。这份按名称得到的清单只覆盖直接带区域代号的资源。日志还出现了共用的 `bg.shpk` 和 `bguvscroll.shpk`。
+
+在同一安装中打开这些 SGB、MTRL、TMB 和 AVFX，扫描以零结尾的完整资源路径，再用 SqPack 索引核对文件存在性，得到 885 对不同的来源与目标。例如 `z3oy_boss_gimmick04.tmb` 同时引用 `z3oy_b0_g04c0c.avfx` 和 `z3oy_b0_g04t0c.avfx`。地板共享组 `sgbg_z3oy_a7_flo2a.sgb` 引用两块背景网格、六个特效和开关音效。该日志只记录加载顺序，缺少战斗时间戳、Director 的事件参数、阶段切换点与实例世界位置。场地事件的播放还要读取共享组和动作时间线的指令，并与相应 Director 事件关联。
+
+地图预览使用 MDL 顶点法线；非均匀缩放的实例按逆转置矩阵变换法线。较小布局优先取 LOD 0 和最高 512 像素的纹理。选择有 ENVB 环境轨道的天气后，「播放昼夜」从滑块当前位置按艾欧泽亚时间连续采样日光、云色和雾色。地图可用 D3D11 执行单纹理天空像素通道。AVFX 局部预览可从战斗资源栏打开，场景内的空间绑定和效果合成仍待接入。 [场景绘制](../src/FFXIVPatchParser.Desktop/MapPreview.Scene.cs) · [原生天空](shaders.md#地图单纹理天空的原生像素通道) · [AVFX 预览](sqpack-media.md#avfx-调度与粒子预览)
+
+区域 1363 的静态布局有 590 个模型实例（含地形）。以 768 个布局实例作为高精度分档阈值后，桌面预览从 51 个实例、约 132 万个绘制三角面增至 107 个实例、约 232 万个绘制三角面。两次运行均达到预览预算，绘制三角面还包含透明裁切产生的细分。
+
+复现界面关联时，选择区域 1363，展开「战斗时间线与特效资源」，读取这场战斗的 ResLogger2 逐行路径清单。选择 `z3oy_boss_gimmick04.tmb` 即可查看它首次出现的日志行与本地文件中的 AVFX 引用。资源按当前 LVB 的加载区间和区域代号筛选，引用逐项核对当前 SqPack。路径与明细可选中复制。
+
+国服 7.58 的 `z3oy_boss_gimmick04.tmb` 有 10 块。沿 `TMAL → TMAC → TMTR → C012` 的 ID 引用读取，核对 C012 的起始帧和相对路径，可定位第 0 帧的 `z3oy_b0_g04c0c.avfx` 和第 28 帧的 `z3oy_b0_g04t0c.avfx`。两条路径均已由本地资源索引验证。当前读取范围为轨道偏移为零且无 Lua 条件的 C012，帧号相对该动作时间线；映射到整场战斗时还需要动作的起始事件。C012 另含绑定点、缩放、旋转、平移等参数。[TMB 触发读取](../src/FFXIVPatchParser/LocalGameSource.TmbAvfx.cs) · [VFXEditor](https://github.com/0ceal0t/Dalamud-VFXEditor)

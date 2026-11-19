@@ -1,0 +1,22 @@
+{
+  "sheet": "HairMakeType",
+  "schemaHash": "68C8C2B48B64E9E2D2EB80097F527F97A9931FF351ABC6CF3271796E72BE264C",
+  "definitions": [
+    { "index": 0, "name": "Race", "converter": { "type": "link", "target": "Race" } },
+    { "index": 1, "name": "Tribe", "converter": { "type": "link", "target": "Tribe" } },
+    { "index": 2, "name": "Gender" },
+    { "index": 30, "name": "HairstyleCount" },
+    {
+      "index": 66,
+      "type": "repeat",
+      "count": 106,
+      "definition": {
+        "type": "group",
+        "members": [
+          { "name": "Hairstyle", "converter": { "type": "link", "target": "CharaMakeCustomize" } },
+          {}, {}, {}, {}, {}, {}, {}, {}
+        ]
+      }
+    }
+  ]
+}

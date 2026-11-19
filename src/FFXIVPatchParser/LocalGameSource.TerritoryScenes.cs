@@ -5,7 +5,10 @@ using Lumina.Data.Parsing.Layer;
 
 namespace FFXIVPatchParser;
 
-public sealed record GameTerritoryInstance(string ModelPath, string Layer, Matrix4x4 Transform, bool IsTerrain);
+public sealed record GameTerritoryInstance(string ModelPath, string Layer, Matrix4x4 Transform, bool IsTerrain)
+{
+    public uint RootSharedGroupId { get; init; }
+}
 public sealed record GameTerritoryLayout(string BasePath, IReadOnlyList<GameTerritoryInstance> Instances, IReadOnlyList<string> Warnings);
 public sealed record GameTerritoryLoadOptions
 {
@@ -73,7 +76,7 @@ public sealed partial class LocalGameSource
         }
         catch (Exception ex) when (IsTerritoryReadFailure(ex)) { Warn("地形清单读取失败：" + ex.Message); }
 
-        void AddLayers(IEnumerable<LayerCommon.Layer> layers, Matrix4x4 parent, string source, int depth)
+        void AddLayers(IEnumerable<LayerCommon.Layer> layers, Matrix4x4 parent, string source, int depth, uint rootGroupId)
         {
             foreach (var layer in layers)
             {
@@ -88,7 +91,7 @@ public sealed partial class LocalGameSource
                     // 国服 7.58 的有效背景模型也使用 IsVisible=0，不能据此剔除。
                     if (item.Object is LayerCommon.BGInstanceObject model &&
                         model.AssetPath.EndsWith(".mdl", StringComparison.OrdinalIgnoreCase))
-                        instances.Add(new(model.AssetPath, source + "/" + layer.Name, transform, false));
+                        instances.Add(new(model.AssetPath, source + "/" + layer.Name, transform, false) { RootSharedGroupId = rootGroupId });
                     else if (item.Object is LayerCommon.SharedGroupInstanceObject group &&
                              group.AssetPath.EndsWith(".sgb", StringComparison.OrdinalIgnoreCase))
                     {
@@ -108,7 +111,7 @@ public sealed partial class LocalGameSource
                                 shared[group.AssetPath] = children;
                                 if (sgb == null) Warn("缺少共享场景：" + group.AssetPath);
                             }
-                            AddLayers(children, transform, source + "/" + layer.Name, depth + 1);
+                            AddLayers(children, transform, source + "/" + layer.Name, depth + 1, depth == 0 ? item.InstanceId : rootGroupId);
                         }
                         catch (Exception ex) when (IsTerritoryReadFailure(ex))
                         {
@@ -131,7 +134,7 @@ public sealed partial class LocalGameSource
                     token.ThrowIfCancellationRequested();
                     file = game.GetFile<LgbFile>(basePath + "level/" + fileName + ".lgb");
                 }
-                if (file != null) AddLayers(file.Layers, Matrix4x4.Identity, fileName, 0);
+                if (file != null) AddLayers(file.Layers, Matrix4x4.Identity, fileName, 0, 0);
             }
             catch (Exception ex) when (IsTerritoryReadFailure(ex)) { Warn(fileName + ".lgb 读取失败：" + ex.Message); }
         }

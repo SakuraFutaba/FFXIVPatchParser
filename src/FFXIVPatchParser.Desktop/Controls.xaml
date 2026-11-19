@@ -9,14 +9,7 @@
   <SolidColorBrush x:Key="ControlTrack" Color="#E1E7EF"/>
 
   <Style x:Key="ControlFocusVisual">
-    <Setter Property="Control.Template">
-      <Setter.Value>
-        <ControlTemplate>
-          <Border BorderBrush="#5684D6" BorderThickness="1" CornerRadius="5" Margin="1"
-                  SnapsToDevicePixels="True" IsHitTestVisible="False"/>
-        </ControlTemplate>
-      </Setter.Value>
-    </Setter>
+    <Setter Property="Control.Template" Value="{x:Null}"/>
   </Style>
 
   <Style x:Key="WorkspacePageTab" TargetType="RadioButton">

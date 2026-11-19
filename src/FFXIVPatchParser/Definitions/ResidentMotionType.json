@@ -1,0 +1,14 @@
+{
+  "sheet": "ResidentMotionType",
+  "schemaHash": "C93C9492B50CAC5A6647B4B8A8CBC1A3A735D93E145653AB5C61E948FD795C75",
+  "definitions": [
+    {
+      "index": 0,
+      "type": "repeat",
+      "count": 8,
+      "definition": {
+        "name": "AnimationSet"
+      }
+    }
+  ]
+}

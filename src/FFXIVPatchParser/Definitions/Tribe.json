@@ -1,0 +1,15 @@
+{
+  "sheet": "Tribe",
+  "schemaHash": "9C5691E6866AF622B77E4674DAD7F74C1AFC5D59CF777CE165ABF54DC6927AC8",
+  "defaultColumn": "Masculine",
+  "definitions": [
+    {
+      "index": 0,
+      "name": "Masculine"
+    },
+    {
+      "index": 1,
+      "name": "Feminine"
+    }
+  ]
+}

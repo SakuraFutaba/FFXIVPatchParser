@@ -18,7 +18,10 @@ public sealed record GameModelMesh(Vector3[] Positions, int[] TriangleIndices)
 }
 
 public sealed record GameModelPreview(string Path, IReadOnlyList<GameModelMesh> Meshes,
-    IReadOnlyList<GameModelMaterial> Materials, IReadOnlyList<string> BoneNames, IReadOnlyList<string> Warnings);
+    IReadOnlyList<GameModelMaterial> Materials, IReadOnlyList<string> BoneNames, IReadOnlyList<string> Warnings)
+{
+    public string? FaceModelPath { get; init; }
+}
 
 public sealed partial class LocalGameSource
 {
@@ -28,8 +31,11 @@ public sealed partial class LocalGameSource
     public GameModelPreview ReadModelPreview(string path, int materialVariant = 1, CancellationToken token = default)
         => ReadModelPreviewCore(path, materialVariant, true, token);
 
+    public GameModelPreview ReadModelPreview(string path, int materialVariant, CancellationToken token, int? imcMask)
+        => ReadModelPreviewCore(path, materialVariant, true, token, imcMask: imcMask);
+
     private GameModelPreview ReadModelPreviewCore(string path, int materialVariant, bool includeMaterials, CancellationToken token, int preferredLod = 0,
-        Func<string, GameModelMaterial>? materialReader = null)
+        Func<string, GameModelMaterial>? materialReader = null, int? imcMask = null, bool hideOptionalFaceFeatures = false)
     {
         if (materialVariant is < 1 or > 9999) throw new ArgumentOutOfRangeException(nameof(materialVariant));
         path = path.Trim().Replace('\\', '/').TrimStart('/');
@@ -60,9 +66,36 @@ public sealed partial class LocalGameSource
             throw new InvalidDataException("模型网格范围越界。");
         var meshTable = new MdlStructs.MeshStruct[modelHeader.MeshCount];
         for (var i = 0; i < meshTable.Length; i++) meshTable[i] = MdlStructs.MeshStruct.Read(reader);
-        reader.ReadUInt32Array(modelHeader.AttributeCount);
+        var attributes = reader.ReadUInt32Array(modelHeader.AttributeCount);
+        uint hiddenAttributes = 0;
+        if (hideOptionalFaceFeatures)
+        {
+            for (var i = 0; i < Math.Min(attributes.Length, 32); i++)
+            {
+                var name = ModelString(strings, attributes[i]);
+                if (name.Length == 8 && name.StartsWith("atr_fv_", StringComparison.Ordinal) && name[7] is >= 'a' and <= 'g')
+                    hiddenAttributes |= 1u << i;
+            }
+        }
+        if (imcMask is { } mask)
+        {
+            var prefix = Path.GetFileNameWithoutExtension(path).Split('_').Last() switch
+            {
+                "met" => "atr_mv_", "top" => "atr_tv_", "glv" => "atr_gv_",
+                "dwn" => "atr_dv_", "sho" => "atr_sv_", "ear" => "atr_ev_",
+                "nek" => "atr_nv_", "wrs" => "atr_wv_", "rir" or "ril" => "atr_rv_",
+                _ => null
+            };
+            for (var i = 0; prefix != null && i < Math.Min(attributes.Length, 32); i++)
+            {
+                var name = ModelString(strings, attributes[i]);
+                if (name.Length == 8 && name.StartsWith(prefix, StringComparison.Ordinal) &&
+                    name[7] is >= 'a' and <= 'j' && (!path.StartsWith("chara/accessory/") || name[7] == 'a') && (mask & (1 << (name[7] - 'a'))) == 0)
+                    hiddenAttributes |= 1u << i;
+            }
+        }
         reader.ReadStructuresAsArray<MdlStructs.TerrainShadowMeshStruct>(modelHeader.TerrainShadowMeshCount);
-        reader.ReadStructuresAsArray<MdlStructs.SubmeshStruct>(modelHeader.SubmeshCount);
+        var submeshes = reader.ReadStructuresAsArray<MdlStructs.SubmeshStruct>(modelHeader.SubmeshCount);
         reader.ReadStructuresAsArray<MdlStructs.TerrainShadowSubmeshStruct>(modelHeader.TerrainShadowSubmeshCount);
         var materialNames = reader.ReadUInt32Array(modelHeader.MaterialCount).Select(offset => ModelString(strings, offset)).ToArray();
         var boneNames = reader.ReadUInt32Array(modelHeader.BoneCount).Select(offset => ModelString(strings, offset)).ToArray();
@@ -128,6 +161,20 @@ public sealed partial class LocalGameSource
                 if (index >= positions.Length) throw new InvalidDataException("模型三角面引用了越界顶点。");
                 indices[i] = index;
             }
+            if (hiddenAttributes != 0 && mesh.SubMeshCount != 0)
+            {
+                var hidden = new bool[indices.Length];
+                foreach (var sub in submeshes.AsSpan(mesh.SubMeshIndex, mesh.SubMeshCount))
+                {
+                    if ((sub.AttributeIndexMask & hiddenAttributes) == 0) continue;
+                    var start = (long)sub.IndexOffset - mesh.StartIndex;
+                    if (start < 0 || start % 3 != 0 || sub.IndexCount % 3 != 0 ||
+                        start + sub.IndexCount > indices.Length)
+                        throw new InvalidDataException("模型子网格三角面范围无效。");
+                    hidden.AsSpan((int)start, (int)sub.IndexCount).Fill(true);
+                }
+                indices = indices.Where((_, i) => !hidden[i]).ToArray();
+            }
             var normals = ReadModelAttribute(vertexBuffer, mesh, elements, Vertex.VertexUsage.Normal, 3)
                 .Select(v => new Vector3(v.X, v.Y, v.Z)).ToArray();
             var uv = ReadModelAttribute(vertexBuffer, mesh, elements, Vertex.VertexUsage.UV, 2)
@@ -143,7 +190,7 @@ public sealed partial class LocalGameSource
             : Array.Empty<GameModelMaterial>();
         foreach (var material in materials)
             if (material.Warning != null) warnings.Add(material.Warning);
-        if (boneNames.Length > 0) warnings.Add("默认显示绑定姿势；怪物可使用本机 Godbert 解码器播放已验证的 PAP 动作。");
+        if (boneNames.Length > 0) warnings.Add("初始显示绑定姿势，可用本机 Godbert 解码与基础骨架匹配的 PAP 动作。");
         return new(path, meshes, materials, boneNames, warnings);
     }
 

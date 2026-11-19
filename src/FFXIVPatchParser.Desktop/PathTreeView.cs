@@ -11,17 +11,53 @@ internal static class PathTreeView
     private static readonly ConditionalWeakTable<TreeView, ViewState> States = new();
 
     public static void SetItems(TreeView view, IReadOnlyList<PathTreeNode> items, string? filter = null,
-        Func<string, bool>? expandByDefault = null)
+        Func<string, bool>? expandByDefault = null, bool compactDirectories = true)
     {
         var state = States.GetValue(view, tree => new ViewState(tree));
-        state.Replace(items, !string.IsNullOrWhiteSpace(filter), expandByDefault);
+        state.Replace(compactDirectories ? CompactDirectories(items) : items,
+            !string.IsNullOrWhiteSpace(filter), expandByDefault);
     }
+
+    internal static IReadOnlyList<PathTreeNode> CompactDirectories(IReadOnlyList<PathTreeNode> nodes)
+    {
+        PathTreeNode[]? changed = null;
+        for (var i = 0; i < nodes.Count; i++)
+        {
+            var first = nodes[i];
+            if (!first.IsDirectory) continue;
+            var last = first;
+            var label = first.Label;
+            List<string>? parents = null;
+            while (last.CanCompactWithChild && last.Payload == null &&
+                last.Children is [{ IsDirectory: true, CanCompactWithChild: true, Payload: null } only])
+            {
+                (parents ??= []).Add(last.FullPath);
+                last = only;
+                label += "/" + only.Label;
+            }
+            var children = CompactDirectories(last.Children);
+            if (last == first && children == first.Children) continue;
+            changed ??= nodes.ToArray();
+            changed[i] = new(last.FullPath, label, last.Payload, children, true, last.IsExpanded)
+            {
+                CanCompactWithChild = last.CanCompactWithChild,
+                CollapsedLabel = last != first ? first.CollapsedLabel ?? first.Label : first.CollapsedLabel,
+                CompactParents = parents?.ToArray() ?? []
+            };
+        }
+        return changed ?? nodes;
+    }
+    public static void SwitchCatalogue(TreeView view, int previous, int next) =>
+        States.GetValue(view, tree => new ViewState(tree)).SwitchCatalogue(previous, next);
 
     public static void Reset(TreeView view)
     {
         if (States.TryGetValue(view, out var state)) state.Reset();
         else view.ItemsSource = null;
     }
+
+    public static PathTreeNode? SelectedNode(TreeView view) =>
+        view.SelectedItem as PathTreeNode ?? (States.TryGetValue(view, out var state) ? state.RestoreNode : null);
 
     public static bool IsRestoringSelection(TreeView view) =>
         States.TryGetValue(view, out var state) && state.Restoring;
@@ -74,11 +110,12 @@ internal static class PathTreeView
     private sealed class ViewState
     {
         private readonly TreeView view;
-        private readonly Dictionary<string, bool> expanded = new(StringComparer.Ordinal);
-        private readonly Dictionary<string, bool> searchExpanded = new(StringComparer.Ordinal);
+        private Dictionary<string, bool> expanded = new(StringComparer.Ordinal);
+        private Dictionary<string, bool> searchExpanded = new(StringComparer.Ordinal);
         private bool searching;
         private List<int>? restorePath;
 
+        public PathTreeNode? RestoreNode { get; private set; }
         public bool Restoring { get; private set; }
         public SelectionKey? Selected { get; private set; }
 
@@ -90,11 +127,30 @@ internal static class PathTreeView
             if (view.SelectedItem is PathTreeNode node) Selected = SelectionKey.From(node);
         }
 
+        private readonly Dictionary<int, (Dictionary<string, bool> Expanded, Dictionary<string, bool> Search, bool Searching, SelectionKey? Selection)> catalogues = new();
+
+        public void SwitchCatalogue(int previous, int next)
+        {
+            if (view.ItemsSource is IReadOnlyList<PathTreeNode> nodes)
+                RememberExpansion(nodes, searching ? searchExpanded : expanded);
+            catalogues[previous] = (expanded, searchExpanded, searching, Selected);
+            catalogues.TryGetValue(next, out var saved);
+            expanded = saved.Expanded ?? new(StringComparer.Ordinal);
+            searchExpanded = saved.Search ?? new(StringComparer.Ordinal);
+            searching = saved.Searching;
+            Selected = saved.Selection;
+            RestoreNode = null;
+            restorePath = null;
+            ReplaceSource(null);
+        }
+
         public void Reset()
         {
+            RestoreNode = null;
             restorePath = null;
             Selected = null;
             searching = false;
+            catalogues.Clear();
             expanded.Clear();
             searchExpanded.Clear();
             ReplaceSource(null);
@@ -112,6 +168,7 @@ internal static class PathTreeView
             }
 
             searching = isSearch;
+            RestoreNode = null;
             restorePath = null;
             var selectionPath = Selected.HasValue ? new List<int>() : null;
             var overrides = searching ? searchExpanded : expanded;
@@ -145,13 +202,19 @@ internal static class PathTreeView
                 var node = items[index];
                 var candidatePath = restorePath == null ? path : null;
                 candidatePath?.Add(index);
-                if (candidatePath != null && SelectionKey.From(node) == Selected) restorePath = [.. candidatePath];
+                if (candidatePath != null && (SelectionKey.From(node) == Selected ||
+                    Selected is { IsDirectory: true, Payload: null } selected && node.CompactParents.Contains(selected.Path)))
+                {
+                    restorePath = [.. candidatePath];
+                    RestoreNode = node;
+                }
                 if (node.IsDirectory)
                 {
                     var lookingForSelection = restorePath == null && candidatePath != null;
                     RestoreExpansion(node.Children, overrides, expandByDefault, candidatePath);
                     node.IsExpanded = (lookingForSelection && restorePath != null) ||
-                        overrides.GetValueOrDefault(node.FullPath, node.IsExpanded || expandByDefault?.Invoke(node.FullPath) == true);
+                        overrides.GetValueOrDefault(node.FullPath, node.IsExpanded || expandByDefault?.Invoke(node.FullPath) == true ||
+                            expandByDefault != null && node.CompactParents.Any(p => expandByDefault(p)));
                     node.InitialExpansion = node.IsExpanded;
                 }
                 candidatePath?.RemoveAt(candidatePath.Count - 1);
@@ -162,6 +225,7 @@ internal static class PathTreeView
         {
             if (Restoring || e.NewValue is not PathTreeNode node) return;
             Selected = SelectionKey.From(node);
+            RestoreNode = null;
             restorePath = null;
         }
 
@@ -186,7 +250,8 @@ internal static class PathTreeView
             {
                 if (!SelectItem(view, path)) return false;
                 if (view.SelectedItem is PathTreeNode node) Selected = SelectionKey.From(node);
-                restorePath = null;
+                RestoreNode = null;
+            restorePath = null;
                 return true;
             }
             finally { Restoring = false; }

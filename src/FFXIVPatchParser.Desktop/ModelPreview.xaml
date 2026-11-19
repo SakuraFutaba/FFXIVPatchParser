@@ -3,10 +3,10 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:local="clr-namespace:FFXIVPatchParser.Desktop"
              Unloaded="PreviewUnloaded" IsVisibleChanged="PreviewVisibilityChanged">
-  <DockPanel>
+  <DockPanel Grid.IsSharedSizeScope="True">
     <Grid x:Name="Browser" DockPanel.Dock="Left" Width="310" Margin="0,0,8,0">
       <Grid.RowDefinitions>
-        <RowDefinition Height="Auto"/>
+        <RowDefinition Height="Auto" SharedSizeGroup="ModelToolbar"/>
         <RowDefinition Height="*"/>
         <RowDefinition Height="Auto" SharedSizeGroup="BrowserFooter"/>
       </Grid.RowDefinitions>
@@ -17,7 +17,7 @@
       <TreeView x:Name="ModelTree" Grid.Row="1" Style="{StaticResource CompactPathTree}" SelectedItemChanged="ModelSelected">
         <TreeView.ItemTemplate>
           <HierarchicalDataTemplate ItemsSource="{Binding Children}">
-            <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" ToolTip="{Binding FullPath}"/>
+            <TextBlock Text="{Binding DisplayLabel}" TextTrimming="CharacterEllipsis" ToolTip="{Binding FullPath}"/>
           </HierarchicalDataTemplate>
         </TreeView.ItemTemplate>
       </TreeView>
@@ -25,21 +25,157 @@
                  VerticalAlignment="Top"
                  TextTrimming="CharacterEllipsis" ToolTip="{Binding Text, RelativeSource={RelativeSource Self}}"/>
     </Grid>
+    <Grid x:Name="CharacterSidebar" DockPanel.Dock="Left" Width="360" Margin="0,0,8,0" Visibility="Collapsed">
+      <Grid.RowDefinitions>
+        <RowDefinition Height="*"/>
+        <RowDefinition Height="Auto" SharedSizeGroup="BrowserFooter"/>
+      </Grid.RowDefinitions>
+      <Border Background="{StaticResource WorkspaceSurface}" BorderBrush="{StaticResource Border}"
+              BorderThickness="1" CornerRadius="6" Padding="10,8,2,8">
+        <ScrollViewer x:Name="CharacterAppearanceScroll" Style="{StaticResource OverlayDetailScroll}">
+          <StackPanel Margin="0,0,14,0">
+            <StackPanel Orientation="Horizontal" Margin="0,0,0,7">
+              <RadioButton x:Name="RacePickerTab" GroupName="AppearancePicker" Style="{StaticResource WorkspacePageTab}"
+                           Content="自选种族" IsChecked="True" Click="SwitchAppearancePicker"/>
+              <RadioButton x:Name="NpcPickerTab" GroupName="AppearancePicker" Style="{StaticResource WorkspacePageTab}"
+                           Content="NPC 外观" Click="SwitchAppearancePicker"/>
+            </StackPanel>
+            <Grid x:Name="RaceAppearancePicker" Margin="0,0,0,10">
+              <ComboBox x:Name="CharacterRace" DisplayMemberPath="Label" AutomationProperties.Name="选择种族"
+                        SelectionChanged="CharacterRaceChanged"/>
+            </Grid>
+            <StackPanel x:Name="NpcAppearancePicker" Visibility="Collapsed" Margin="0,0,0,10">
+                <TextBox x:Name="NpcAppearanceSearch" Style="{StaticResource SearchTextBox}" Tag="搜索 NPC 名称或编号…"
+                         TextChanged="FilterNpcAppearance" KeyDown="NpcAppearanceSearchKeyDown" AutomationProperties.Name="搜索 NPC 外观"/>
+                <ComboBox x:Name="NpcAppearanceChoice" DisplayMemberPath="Label" Margin="0,5,0,0"
+                          SelectionChanged="NpcAppearanceChanged" AutomationProperties.Name="选择 NPC 外观"
+                          ScrollViewer.CanContentScroll="True" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
+                  <ComboBox.ItemsPanel><ItemsPanelTemplate><VirtualizingStackPanel/></ItemsPanelTemplate></ComboBox.ItemsPanel>
+                </ComboBox>
+                <TextBlock x:Name="NpcAppearanceStatus" TextWrapping="Wrap" Foreground="{StaticResource Muted}" Margin="0,4,0,0"/>
+            </StackPanel>
+            <StackPanel x:Name="AppearanceContent">
+              <Expander x:Name="CharacterParts" Header="装备、发型与脸型" Visibility="Collapsed" IsExpanded="True" Margin="0,0,0,8" Expanded="CharacterPartsExpanded">
+                <StackPanel Margin="0,5,0,0">
+                  <Grid x:Name="SlotGrid" Margin="0,0,0,6">
+                    <Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="8"/><ColumnDefinition/></Grid.ColumnDefinitions>
+                  </Grid>
+                  <ComboBox Visibility="Collapsed" x:Name="PartSlot" DisplayMemberPath="Label" SelectionChanged="PartSlotChanged" AutomationProperties.Name="角色部位"/>
+                  <StackPanel x:Name="CharacterPartEditor">
+                  <TextBox x:Name="PartFilter" Style="{StaticResource SearchTextBox}" Tag="筛选部件名称…" TextChanged="PartFilterChanged" Margin="0,4,0,0" AutomationProperties.Name="筛选部件名称"/>
+                  <DockPanel Margin="0,4,0,0">
+                    <Button x:Name="CopyPartName" DockPanel.Dock="Right" Style="{StaticResource CopyButton}" Content="复制装备名"
+                            Click="CopySelectedPartName" Margin="6,0,0,0" IsEnabled="False"/>
+                  <ComboBox x:Name="PartChoice" TextSearch.TextPath="Label" VerticalAlignment="Center"
+                            SelectionChanged="PartChoiceChanged" AutomationProperties.Name="角色部件"
+                            ScrollViewer.CanContentScroll="True" VirtualizingPanel.IsVirtualizing="True" VirtualizingPanel.VirtualizationMode="Recycling">
+                    <ComboBox.ItemTemplate><DataTemplate><DockPanel>
+                      <Image Width="22" Height="22" Margin="0,0,6,0" Loaded="PartIconLoaded" DataContextChanged="PartIconChanged"/>
+                      <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                    </DockPanel></DataTemplate></ComboBox.ItemTemplate>
+                    <ComboBox.ItemsPanel><ItemsPanelTemplate><VirtualizingStackPanel/></ItemsPanelTemplate></ComboBox.ItemsPanel>
+                  </ComboBox>
+                  </DockPanel>
+                  <CheckBox x:Name="WeaponSheathed" Content="收起武器" Margin="0,5" Click="WeaponSheathedChanged"/>
+                  </StackPanel>
+                  <TextBlock x:Name="PartStatus" TextWrapping="Wrap" Foreground="{StaticResource Muted}"/>
+                </StackPanel>
+              </Expander>
+              <Expander x:Name="CharacterAppearance" Header="角色配色" Visibility="Collapsed" IsExpanded="True" Margin="0,0,0,8">
+                <Grid Margin="0,5,0,0">
+                <Grid x:Name="PlayerColors">
+                  <Grid.Resources>
+                    <DataTemplate x:Key="PaletteChoice">
+                      <StackPanel Orientation="Horizontal" ToolTip="{Binding Tooltip}">
+                        <Border Width="12" Height="12" CornerRadius="3" Margin="0,0,6,0"
+                                Background="{Binding Brush}" BorderBrush="{StaticResource Border}" BorderThickness="1"/>
+                        <TextBlock Text="{Binding Label}"/>
+                      </StackPanel>
+                    </DataTemplate>
+                    <Style x:Key="PalettePicker" TargetType="ComboBox" BasedOn="{StaticResource {x:Type ComboBox}}">
+                      <Setter Property="ItemTemplate" Value="{StaticResource PaletteChoice}"/>
+                      <Setter Property="Margin" Value="0,0,0,4"/>
+                      <Setter Property="MaxDropDownHeight" Value="320"/>
+                      <Setter Property="ScrollViewer.CanContentScroll" Value="True"/>
+                      <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling"/>
+                      <Setter Property="ItemsPanel">
+                        <Setter.Value><ItemsPanelTemplate><VirtualizingStackPanel/></ItemsPanelTemplate></Setter.Value>
+                      </Setter>
+                    </Style>
+                  </Grid.Resources>
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*"/><ColumnDefinition Width="10"/><ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/>
+                  </Grid.RowDefinitions>
+                  <StackPanel>
+                    <TextBlock Text="部族" Margin="0,0,0,2"/>
+                    <ComboBox x:Name="TribeColors" DisplayMemberPath="Name" Padding="5,3"
+                              SelectionChanged="AppearanceTribeChanged" AutomationProperties.Name="角色部族" Margin="0,0,0,4"/>
+                  </StackPanel>
+                  <StackPanel Grid.Column="2">
+                    <TextBlock Text="肤色" Margin="0,0,0,2"/>
+                    <ComboBox x:Name="SkinColors" Style="{StaticResource PalettePicker}"
+                              SelectionChanged="AppearanceColorChanged" AutomationProperties.Name="角色肤色"/>
+                  </StackPanel>
+                  <StackPanel Grid.Row="1">
+                    <TextBlock Text="发色" Margin="0,0,0,2"/>
+                    <ComboBox x:Name="HairColors" Style="{StaticResource PalettePicker}"
+                              SelectionChanged="AppearanceColorChanged" AutomationProperties.Name="角色发色"/>
+                  </StackPanel>
+                  <StackPanel Grid.Row="1" Grid.Column="2">
+                    <TextBlock Text="挑染" Margin="0,0,0,2"/>
+                    <ComboBox x:Name="HighlightColors" Style="{StaticResource PalettePicker}"
+                              SelectionChanged="AppearanceColorChanged" AutomationProperties.Name="角色挑染色"/>
+                  </StackPanel>
+                  <StackPanel Grid.Row="2">
+                    <TextBlock Text="瞳色" Margin="0,0,0,2"/>
+                    <ComboBox x:Name="EyeColors" Style="{StaticResource PalettePicker}"
+                              SelectionChanged="AppearanceColorChanged" AutomationProperties.Name="角色瞳色"/>
+                  </StackPanel>
+                  <DockPanel Grid.Row="2" Grid.Column="2" VerticalAlignment="Bottom" Margin="0,0,0,4">
+                    <Button x:Name="ResetPalette" DockPanel.Dock="Right" Content="恢复默认" Click="ResetAppearance" Margin="6,0,0,0"/>
+                    <TextBlock x:Name="AppearanceStatus" VerticalAlignment="Center" TextWrapping="Wrap" Foreground="{StaticResource Muted}"/>
+                  </DockPanel>
+                </Grid>
+                <StackPanel x:Name="NpcColors" Visibility="Collapsed">
+                  <TextBlock x:Name="NpcTribeName" Margin="0,0,0,5"/>
+                  <ItemsControl x:Name="NpcColorItems">
+                    <ItemsControl.ItemsPanel><ItemsPanelTemplate><UniformGrid Columns="2"/></ItemsPanelTemplate></ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                      <DataTemplate>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,5">
+                          <Border Background="{Binding Brush}" BorderBrush="{StaticResource Border}" BorderThickness="1"
+                                  Width="12" Height="12" CornerRadius="3" Margin="0,0,6,0"/>
+                          <TextBlock Text="{Binding Label}"/>
+                        </StackPanel>
+                      </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                  </ItemsControl>
+                </StackPanel>
+                </Grid>
+              </Expander>
+            </StackPanel>
+          </StackPanel>
+        </ScrollViewer>
+      </Border>
+    </Grid>
     <Grid>
       <Grid.RowDefinitions>
-        <RowDefinition Height="Auto"/>
+        <RowDefinition x:Name="ModelToolbarRow" Height="Auto" SharedSizeGroup="ModelToolbar"/>
         <RowDefinition Height="Auto"/>
         <RowDefinition Height="*"/>
         <RowDefinition Height="Auto" SharedSizeGroup="BrowserFooter"/>
       </Grid.RowDefinitions>
-      <DockPanel Margin="0,0,0,6">
+      <DockPanel x:Name="ModelPathToolbar" Margin="0,0,0,6">
         <Button x:Name="LoadButton" DockPanel.Dock="Right" Content="读取模型" Style="{StaticResource Primary}" Click="LoadModel"
                 Margin="6,0,0,0" VerticalAlignment="Top"/>
         <Button x:Name="CatalogueOptions" DockPanel.Dock="Right" Click="ToggleCatalogueOptions" Margin="8,0,0,0"
                 VerticalAlignment="Top" Visibility="{Binding Visibility, ElementName=Browser}"
-                AutomationProperties.Name="模型目录选项">
+                AutomationProperties.Name="模型扫描选项">
           <StackPanel Orientation="Horizontal">
-            <TextBlock Text="目录选项"/>
+            <TextBlock Text="扫描选项"/>
             <Path Width="8" Height="4" Data="M 0,0 L 4,4 L 8,0" Stroke="{StaticResource Muted}" StrokeThickness="1.4"
                   StrokeStartLineCap="Round" StrokeEndLineCap="Round" VerticalAlignment="Center" Margin="6,0,0,0"/>
           </StackPanel>
@@ -53,14 +189,9 @@
                   BorderThickness="1" CornerRadius="8" Padding="10" PreviewKeyDown="CatalogueOptionsKeyDown"
                   KeyboardNavigation.TabNavigation="Cycle">
             <StackPanel Width="235">
-              <ComboBox x:Name="ModelMode" SelectedIndex="0" SelectionChanged="ModelModeChanged" Margin="0,0,0,6" AutomationProperties.Name="模型目录视图">
-                <ComboBoxItem Content="按来源分类"/>
-                <ComboBoxItem Content="按模型编号"/>
-                <ComboBoxItem Content="全部已知模型路径"/>
-              </ComboBox>
               <Button x:Name="NpcNamesButton" Content="补充 NPC 名称" Click="DownloadNpcNames" Padding="6,3" Margin="0,6,0,0"
                       HorizontalAlignment="Left" ToolTip="读取 Anamnesis 名称映射，尝试更新中文对照，再重建模型目录。"/>
-              <Expander x:Name="CatalogueScanOptions" Header="扫描选项" Margin="0,6,0,0">
+              <Expander x:Name="CatalogueScanOptions" Header="模型路径扫描" Margin="0,6,0,0">
                 <StackPanel>
                   <Button x:Name="UnknownModelsButton" Content="扫描未知模型" Click="ScanUnknownModels" Padding="6,3" Margin="0,6,0,0" HorizontalAlignment="Left"
                           ToolTip="逐项读取 DAT 文件头，查找没有已知路径的模型；可能耗时较长。"/>
@@ -73,25 +204,38 @@
             </StackPanel>
           </Border>
       </Popup>
-      <WrapPanel Grid.Row="1" Margin="0,0,0,6">
-        <Button x:Name="ResetButton" Content="重置视图" Padding="9,4" IsEnabled="False" Click="ResetView"/>
-        <CheckBox x:Name="UseTextures" Content="基础色纹理" IsChecked="True" IsEnabled="False" Margin="0,0,12,0"
-                  VerticalAlignment="Center" Checked="ChangeDisplay" Unchecked="ChangeDisplay"/>
-        <TextBlock Text="材质变体" VerticalAlignment="Center" Margin="0,0,6,0"/>
-        <TextBox x:Name="MaterialVariant" Text="1" Width="43" Padding="5,3" KeyDown="ModelPathKeyDown"
-                 AutomationProperties.Name="材质变体" ToolTip="输入变体编号后按 Enter 或重新读取模型"/>
-      </WrapPanel>
       <DockPanel Grid.Row="2">
         <Border x:Name="Inspector" DockPanel.Dock="Right" Width="208" Margin="8,0,0,0" Background="{StaticResource WorkspaceSurface}"
                 BorderBrush="#E4E7EC" BorderThickness="1" CornerRadius="6" Padding="9" Visibility="Collapsed">
-          <ScrollViewer Style="{StaticResource OverlayDetailScroll}">
-            <StackPanel>
-              <TextBlock x:Name="ModelEntryInfo" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,0,0,8"/>
+          <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+            <StackPanel Margin="0,0,12,0">
+              <TextBlock x:Name="ModelEntryInfo" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,0,0,8">
+                <TextBlock.Style><Style TargetType="TextBlock"><Style.Triggers>
+                  <Trigger Property="Text" Value=""><Setter Property="Visibility" Value="Collapsed"/></Trigger>
+                </Style.Triggers></Style></TextBlock.Style>
+              </TextBlock>
+              <DockPanel x:Name="ItemDyePanel" Visibility="Collapsed" Margin="0,0,0,6">
+                <TextBlock Text="装备染色" VerticalAlignment="Center" />
+                <Grid x:Name="ItemDyeControls" Height="22" HorizontalAlignment="Right"/>
+              </DockPanel>
+              <Button x:Name="ItemHandButton" Visibility="Collapsed" Click="SwitchItemHand" Margin="0,0,0,6"/>
               <WrapPanel x:Name="ModelTableLinks" Visibility="Collapsed" Margin="0,0,0,8">
                 <Button Content="来源行" Tag="source" Click="OpenModelTable" Padding="5,3" Margin="0,0,4,3"/>
                 <Button x:Name="NameTableLink" Content="名称行" Tag="name" Click="OpenModelTable" Padding="5,3" Margin="0,0,4,3"/>
                 <Button Content="ModelChara" Tag="model" Click="OpenModelTable" Padding="5,3" Margin="0,0,0,3"/>
               </WrapPanel>
+              <Button x:Name="MaterialsButton" Content="材质与纹理" Click="OpenInspectorPopup"  Margin="0,0,0,6"/>
+              <Popup x:Name="MaterialsPopup" PlacementTarget="{Binding ElementName=MaterialsButton}" Placement="Left" StaysOpen="False" AllowsTransparency="True">
+                <Border Background="{StaticResource WorkspaceSurface}" BorderBrush="{StaticResource Border}" BorderThickness="1" Padding="10" CornerRadius="6">
+                  <ScrollViewer Width="330" MaxHeight="520" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="0,0,12,0">
+                      <WrapPanel>
+        <CheckBox x:Name="UseTextures" Content="基础色纹理" IsChecked="True" IsEnabled="False" Margin="0,0,12,0"
+                  VerticalAlignment="Center" Checked="ChangeDisplay" Unchecked="ChangeDisplay"/>
+        <TextBlock Text="材质变体" VerticalAlignment="Center" Margin="0,0,6,0"/>
+        <TextBox x:Name="MaterialVariant" Text="1" Width="43" Padding="5,3" KeyDown="ModelPathKeyDown"
+                 AutomationProperties.Name="材质变体" ToolTip="输入变体编号后按 Enter 或重新读取模型"/>
+                      </WrapPanel>
               <TextBlock Text="材质" FontWeight="SemiBold" Margin="0,0,0,5"/>
               <ComboBox x:Name="MaterialChoice" SelectionChanged="MaterialSelected" DisplayMemberPath="Label"
                         AutomationProperties.Name="材质筛选" Padding="5,3" HorizontalContentAlignment="Stretch"/>
@@ -104,6 +248,10 @@
                         AutomationProperties.Name="材质贴图" Padding="5,3" Margin="0,8,0,0" Visibility="Collapsed"/>
               <Image x:Name="TextureImage" Height="100" Stretch="Uniform" Visibility="Collapsed" Margin="0,6,0,0"/>
               <TextBlock x:Name="TextureStatus" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,5,0,0"/>
+                    </StackPanel>
+                  </ScrollViewer>
+                </Border>
+              </Popup>
               <Separator Margin="0,8"/>
               <TextBlock Text="骨骼与动作" FontWeight="SemiBold" Margin="0,0,0,5"/>
               <TextBlock x:Name="AnimationStatus" Foreground="{StaticResource Muted}" TextWrapping="Wrap"/>
@@ -112,7 +260,7 @@
               </Expander>
               <Expander x:Name="ActionList" Header="动作资源" IsExpanded="True" Margin="0,8,0,0" Expanded="ActionListExpanded">
                 <StackPanel Margin="0,5,0,0">
-                  <TextBox x:Name="ActionFilter" Style="{StaticResource SearchTextBox}" Tag="筛选动作候选…" AutomationProperties.Name="筛选动作候选"
+                  <TextBox x:Name="ActionFilter" Style="{StaticResource SearchTextBox}" Tag="筛选技能、情感动作或路径…" AutomationProperties.Name="筛选动作候选"
                            IsEnabled="False" TextChanged="FilterActions" Padding="5,3" Margin="0,0,0,5"/>
                   <DockPanel Margin="0,6,0,0">
                     <Button Content="读取" DockPanel.Dock="Right" Click="LoadAction" Padding="5,3" Margin="4,0,0,0"/>
@@ -157,6 +305,8 @@
                             ToolTip="下一个动作槽" AutomationProperties.Name="下一个动作槽"/>
                   </Grid>
                   <TextBlock x:Name="ActionDiscoveryStatus" Foreground="{StaticResource Muted}" TextWrapping="Wrap" Margin="0,5,0,0"/>
+                  <local:AnimationDetails x:Name="ActionRelations" Visibility="Collapsed" Margin="0,5,0,0"
+                                          RelatedTableRequested="OpenActionTable"/>
                 </StackPanel>
               </Expander>
               <WrapPanel Margin="0,5,0,0">
@@ -188,7 +338,9 @@
                 </ModelVisual3D.Content>
               </ModelVisual3D>
               <ModelVisual3D x:Name="ModelVisual"/>
+              <ModelVisual3D x:Name="ItemEffectVisual"/>
             </Viewport3D>
+            <Button x:Name="ResetButton" Content="重置视图" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="8" Padding="9,4" IsEnabled="False" Click="ResetView"/>
             <TextBlock x:Name="EmptyViewport" Text="选择或输入模型路径" Foreground="#CFD8E5" Margin="12"
                        HorizontalAlignment="Center" VerticalAlignment="Center" TextWrapping="Wrap" TextAlignment="Center"
                        IsHitTestVisible="False"/>

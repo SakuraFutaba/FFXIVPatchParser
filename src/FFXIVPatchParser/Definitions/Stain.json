@@ -1,0 +1,10 @@
+{
+  "sheet": "Stain",
+  "schemaHash": "F86AA606896EE95D16BAC8DF42A1E19F8DFF9F3B3C7163853133FD0EF6F77087",
+  "defaultColumn": "Name",
+  "definitions": [
+    { "index": 0, "name": "Color", "converter": { "type": "color" } },
+    { "index": 5, "name": "Name" },
+    { "index": 6, "name": "Name2" }
+  ]
+}

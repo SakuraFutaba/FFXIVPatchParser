@@ -105,6 +105,11 @@
     <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
     <DockPanel Height="28" Margin="0,0,0,10">
       <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+        <StackPanel x:Name="CharacterImportToolbar" Orientation="Horizontal" Visibility="Collapsed">
+          <Button Content="导入外观" Click="ImportModelAppearance"/>
+          <Button Content="导入套装" Click="ImportModelGearset" Margin="6,0,0,0"/>
+          <Button Content="导入模板码" Click="ImportModelTemplate" Margin="6,0,0,0"/>
+        </StackPanel>
         <TextBox x:Name="PatchFileSearch" Style="{StaticResource SearchTextBox}" Width="295"
                  Tag="搜索补丁文件路径或类别…" TextChanged="FilterPatchFiles" AutomationProperties.Name="搜索补丁文件"/>
         <Button x:Name="ScanMediaButton" Click="ScanCurrentMedia" Width="112" Margin="0"
@@ -116,6 +121,11 @@
         <ScrollViewer x:Name="DiffTableHeader" Visibility="Collapsed" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
           <StackPanel x:Name="DiffTableTabStrip" Orientation="Horizontal"/>
         </ScrollViewer>
+        <StackPanel x:Name="ModelPageTabs" Orientation="Horizontal" Visibility="Collapsed">
+          <RadioButton Style="{StaticResource WorkspacePageTab}" GroupName="ModelPage" Content="按模型编号" Tag="Number" Checked="ModelPageChanged"/>
+          <RadioButton Style="{StaticResource WorkspacePageTab}" GroupName="ModelPage" Content="按资源类型" Tag="ResourceType" Checked="ModelPageChanged" IsChecked="True"/>
+          <RadioButton x:Name="CharacterPageTab" Style="{StaticResource WorkspacePageTab}" GroupName="ModelPage" Content="角色预览" Tag="Character" Checked="ModelPageChanged"/>
+        </StackPanel>
         <StackPanel x:Name="ImagePageTabs" Orientation="Horizontal" Visibility="Collapsed">
           <RadioButton x:Name="TexturePageTab" Style="{StaticResource WorkspacePageTab}" GroupName="ImagePage" Content="图片" IsChecked="True" Checked="ImagePageChanged"/>
           <RadioButton x:Name="IconPageTab" Style="{StaticResource WorkspacePageTab}" GroupName="ImagePage" Content="图标浏览器" Checked="ImagePageChanged"/>
@@ -133,7 +143,7 @@
       <TreeView x:Name="ResourcesTree" Style="{StaticResource CompactPathTree}" SelectedItemChanged="ResourceSelected">
         <TreeView.ItemTemplate>
           <HierarchicalDataTemplate ItemsSource="{Binding Children}">
-            <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" ToolTipService.ShowDuration="20000">
+            <TextBlock Text="{Binding DisplayLabel}" TextTrimming="CharacterEllipsis" ToolTipService.ShowDuration="20000">
               <TextBlock.ToolTip>
                 <StackPanel MaxWidth="480">
                   <TextBlock Text="{Binding FullPath}" FontWeight="SemiBold" TextWrapping="Wrap"/>
@@ -244,7 +254,7 @@
             </TreeView.ItemContainerStyle>
             <TreeView.ItemTemplate>
               <HierarchicalDataTemplate ItemsSource="{Binding Children}">
-                <TextBlock Text="{Binding Label}" Margin="0,1" TextTrimming="CharacterEllipsis">
+                <TextBlock Text="{Binding DisplayLabel}" Margin="0,1" TextTrimming="CharacterEllipsis">
                   <TextBlock.ToolTip>
                     <ToolTip DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
                       <StackPanel>

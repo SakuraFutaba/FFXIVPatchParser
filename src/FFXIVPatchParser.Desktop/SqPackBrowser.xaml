@@ -30,10 +30,10 @@
       <Setter Property="ToolTip" Value="{Binding Text, RelativeSource={RelativeSource Self}}"/>
     </Style>
     <HierarchicalDataTemplate x:Key="PathTreeLabel" ItemsSource="{Binding Children}">
-      <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis" ToolTip="{Binding FullPath}"/>
+      <TextBlock Text="{Binding DisplayLabel}" TextTrimming="CharacterEllipsis" ToolTip="{Binding FullPath}"/>
     </HierarchicalDataTemplate>
     <HierarchicalDataTemplate x:Key="PatchPathTreeLabel" ItemsSource="{Binding Children}">
-      <TextBlock Text="{Binding Label}" TextTrimming="CharacterEllipsis">
+      <TextBlock Text="{Binding DisplayLabel}" TextTrimming="CharacterEllipsis">
         <TextBlock.ToolTip>
           <StackPanel MaxWidth="540">
             <TextBlock Text="{Binding FullPath}" FontWeight="SemiBold" TextWrapping="Wrap"/>
@@ -82,7 +82,9 @@
           <DockPanel>
             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Top" Margin="8,0,0,0">
               <Button x:Name="SwitchFilePreviewButton" Content="查看 Hex" Click="SwitchFilePreview" Visibility="Collapsed"/>
+              <Button x:Name="OpenFileEffectButton" Content="预览特效" Click="OpenFileEffect" Visibility="Collapsed"/>
               <Button x:Name="JumpToFilePreviewButton" Click="JumpToFilePreview" Visibility="Collapsed"/>
+              <Button x:Name="ExportFileButton" Width="32" ToolTip="{Binding Content, RelativeSource={RelativeSource Self}}" AutomationProperties.Name="{Binding Content, RelativeSource={RelativeSource Self}}" Style="{StaticResource ExportButton}" Content="导出原始文件" Click="ExportSelectedFile" IsEnabled="False"/>
               <Button x:Name="CopyFilePathButton" Style="{StaticResource CopyButton}" Content="复制路径" Click="CopyFilePath" IsEnabled="False" Margin="0"/>
             </StackPanel>
             <StackPanel>
@@ -98,10 +100,17 @@
                   </Style>
                 </TextBlock.Style>
               </TextBlock>
+              <Expander x:Name="ShaderDetails" Header="ShCd 着色器结构" Visibility="Collapsed">
+                <ScrollViewer MaxHeight="160" VerticalScrollBarVisibility="Auto">
+                  <TextBlock x:Name="ShaderSummary" TextWrapping="Wrap"/>
+                </ScrollViewer>
+              </Expander>
               <TextBlock x:Name="FilePreviewIssue" Foreground="#9A3412" TextWrapping="Wrap"
                          Margin="0,4,0,0" Visibility="Collapsed"/>
             </StackPanel>
           </DockPanel>
+          <local:AnimationDetails x:Name="FileAnimationDetails" Visibility="Collapsed" Margin="0,5,0,0"
+                                  RelatedTableRequested="OpenModelSheet"/>
         </StackPanel>
         <Grid Grid.Row="1">
           <Grid x:Name="FileHexPanel" Visibility="Collapsed">

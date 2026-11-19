@@ -21,6 +21,8 @@ public partial class SqPackBrowser
     private bool showFileHex, filePreviewSuspended;
     private bool copyingFilePath;
     private CancellationTokenSource? fileRequest;
+    private CancellationTokenSource? fileExport;
+    private Task fileExportTask = Task.CompletedTask;
     private Task filePreviewTask = Task.CompletedTask;
 
     private void UpdateFileLayout(bool show)
@@ -99,7 +101,8 @@ public partial class SqPackBrowser
     private async Task StopFileWorkAsync()
     {
         CancelFilePreview();
-        await Task.WhenAll(filePreviewTask, FileTree.StopLoadingAsync());
+        fileExport?.Cancel();
+        await Task.WhenAll(fileExportTask, filePreviewTask, FileTree.StopLoadingAsync());
     }
 
     private void ResetFilePreview()
@@ -111,6 +114,8 @@ public partial class SqPackBrowser
         FileInfo.Text = "";
         SetFilePreviewIssue(null);
         FileSourcePath.Text = "选择文件查看内容";
+        ShaderDetails.Visibility = Visibility.Collapsed;
+        FileAnimationDetails.Clear();
         FileHexText.Clear();
         UpdateFileButtons();
         UpdateVisiblePanels();
@@ -125,6 +130,8 @@ public partial class SqPackBrowser
         fileBytePage = null;
         showFileHex = false;
         FileSourcePath.Text = entry.Path;
+        ShaderDetails.Visibility = Visibility.Collapsed;
+        FileAnimationDetails.Clear();
         FileInfo.Text = FileAddressLabel(entry);
         SetFilePreviewIssue(null);
         FileHexText.Text = "正在读取文件…";
@@ -166,6 +173,30 @@ public partial class SqPackBrowser
             token.ThrowIfCancellationRequested();
             fileTarget = target;
             if (target is null) SetFilePreviewIssue(null);
+            if (first && page.Bytes.AsSpan().StartsWith("ShCd"u8))
+            {
+                if (page.Size <= 1048576)
+                {
+                    var shader = page.Truncated ? await Task.Run(() => source.ReadFileSystemFile(entry, (int)page.Size, token), token) : page;
+                    token.ThrowIfCancellationRequested();
+                    ShaderSummary.Text = ShaderInspection.Describe(shader.Bytes);
+                    ShaderDetails.Visibility = Visibility.Visible;
+                }
+                else SetFilePreviewIssue("ShCd 超过 1 MiB 结构预览上限，可分页查看 Hex。");
+            }
+            if (first && page.Bytes.AsSpan().StartsWith("pap "u8))
+            {
+                try
+                {
+                    var (animation, description) = await Task.Run(() => source.ReadFileSystemAnimation(entry, page, token), token);
+                    token.ThrowIfCancellationRequested();
+                    FileAnimationDetails.Show(description, animation);
+                }
+                catch (Exception ex) when (ex is IOException or InvalidDataException or NotSupportedException)
+                {
+                    if (!token.IsCancellationRequested) SetFilePreviewIssue("无法读取 PAP 槽 · " + ex.Message);
+                }
+            }
             UpdateVisiblePanels();
             UpdateFileButtons();
             if (!showFileHex && target != null)
@@ -293,9 +324,45 @@ public partial class SqPackBrowser
         SqPackPage.Maps => "地图", SqPackPage.Audio => "音频", _ => "文件"
     };
 
+    private async void ExportSelectedFile(object sender, RoutedEventArgs e)
+    {
+        if (fileExport != null) { fileExport.Cancel(); return; }
+        if (game is not { } source || fileEntry is not { } entry) return;
+        var dialog = new Microsoft.Win32.SaveFileDialog
+        {
+            FileName = entry.KnownPath is { } path ? Path.GetFileName(path) : $"{entry.Hash:X16}.bin",
+            Filter = "所有文件 (*.*)|*.*",
+            OverwritePrompt = true
+        };
+        if (dialog.ShowDialog(Window.GetWindow(this)) != true) return;
+        fileExportTask = ExportFileAsync(source, entry, dialog.FileName, File.Exists(dialog.FileName));
+        await fileExportTask;
+    }
+
+    private async Task ExportFileAsync(LocalGameSource source, SqPackFileSystemEntry entry, string destination, bool overwrite)
+    {
+        using var pending = new CancellationTokenSource();
+        fileExport = pending;
+        UpdateFileButtons();
+        try
+        {
+            var length = await Task.Run(() => source.ExportFileSystemFile(entry, destination, overwrite, pending.Token));
+            SetWorkStatus(SqPackPage.Files, $"已导出 {Path.GetFileName(destination)} · {length:N0} 字节");
+        }
+        catch (OperationCanceledException) { SetWorkStatus(SqPackPage.Files, "已取消文件导出"); }
+        catch (Exception ex) { SetWorkStatus(SqPackPage.Files, "文件导出失败 · " + ex.Message, true); }
+        finally { fileExport = null; UpdateFileButtons(); }
+    }
     private void UpdateFileButtons()
     {
         var ready = fileRequest == null && fileBytePage != null;
+        OpenFileEffectButton.Visibility = fileEntry?.KnownPath is { } effectPath &&
+            Path.GetExtension(effectPath) is ".avfx" or ".tmb"
+            ? Visibility.Visible : Visibility.Collapsed;
+        OpenFileEffectButton.IsEnabled = ready;
+        ExportFileButton.IsEnabled = fileEntry != null || fileExport != null;
+        ExportFileButton.Style = (Style)FindResource(fileExport == null ? "ExportButton" : "StopPlaybackButton");
+        ExportFileButton.Content = fileExport == null ? "导出原始文件" : "取消导出";
         CopyFilePathButton.IsEnabled = fileEntry != null && !copyingFilePath;
         SwitchFilePreviewButton.Visibility = JumpToFilePreviewButton.Visibility = fileTarget != null ? Visibility.Visible : Visibility.Collapsed;
         SwitchFilePreviewButton.IsEnabled = ready;
@@ -307,6 +374,12 @@ public partial class SqPackBrowser
         FileHexNavigation.IsEnabled = ready;
         PreviousFileHexButton.IsEnabled = fileBytePage is { Offset: > 0 };
         NextFileHexButton.IsEnabled = fileBytePage is { Truncated: true };
+    }
+
+    private void OpenFileEffect(object sender, RoutedEventArgs e)
+    {
+        if (game is { } source && fileEntry?.KnownPath is { } path)
+            new AvfxPreviewWindow(source, [path]) { Owner = Window.GetWindow(this) }.Show();
     }
 
     private void SwitchFilePreview(object sender, RoutedEventArgs e)

@@ -36,6 +36,9 @@ public partial class UldBrowser : UserControl
     private readonly List<(LayoutNode Node, UldTimeline Timeline)> animatedNodes = [];
     private Canvas? previewContent;
     private bool updatingFrameRange;
+    private readonly System.Diagnostics.Stopwatch playbackClock = new();
+    private double playbackStart;
+    private bool advancingPlayback;
     private int drawn, unsupported;
     private sealed record AssetRow(uint Id, string Path, byte ThemeMask, uint IconId);
     private sealed record PartRow(uint List, int Index, uint Texture, int U, int V, int Width, int Height);
@@ -44,11 +47,12 @@ public partial class UldBrowser : UserControl
     public UldBrowser()
     {
         InitializeComponent();
-        IsVisibleChanged += (_, _) => { if (IsVisible) InitializeUld(); };
+        IsVisibleChanged += (_, _) => { if (IsVisible) InitializeUld(); else StopTimelinePlayback(); };
     }
 
     public async Task StopAsync()
     {
+        StopTimelinePlayback();
         stopped = true;
         sourceLifetime.Cancel();
         revision++;
@@ -323,6 +327,7 @@ public partial class UldBrowser : UserControl
     private void SelectedLayoutChanged(object sender, SelectionChangedEventArgs e)
     {
         if (PreviewCanvas == null) return;
+        StopTimelinePlayback();
         PreviousLayoutButton.IsEnabled = NextLayoutButton.IsEnabled = Layouts.Items.Count > 1;
         Render();
     }
@@ -340,11 +345,39 @@ public partial class UldBrowser : UserControl
         foreach (var visual in layoutVisuals) visual.ShowMarker(ShowNodeMarkers.IsChecked == true);
     }
 
+    private void ToggleTimelinePlayback(object sender, RoutedEventArgs e)
+    {
+        if (playbackClock.IsRunning) { StopTimelinePlayback(); return; }
+        if (TimelineFrame.Value >= TimelineFrame.Maximum) TimelineFrame.Value = 0;
+        playbackStart = TimelineFrame.Value;
+        playbackClock.Restart();
+        PlayTimelineButton.Content = "暂停";
+        CompositionTarget.Rendering += AdvanceTimelinePlayback;
+    }
+
+    private void AdvanceTimelinePlayback(object? sender, EventArgs e)
+    {
+        var frame = Math.Floor(playbackStart + playbackClock.Elapsed.TotalSeconds * 30);
+        advancingPlayback = true;
+        try { TimelineFrame.Value = Math.Min(frame, TimelineFrame.Maximum); }
+        finally { advancingPlayback = false; }
+        if (frame >= TimelineFrame.Maximum) StopTimelinePlayback();
+    }
+
+    private void StopTimelinePlayback()
+    {
+        if (!playbackClock.IsRunning) return;
+        CompositionTarget.Rendering -= AdvanceTimelinePlayback;
+        playbackClock.Reset();
+        PlayTimelineButton.Content = "播放";
+    }
+
     private void PreviousFrame(object sender, RoutedEventArgs e) => TimelineFrame.Value--;
     private void NextFrame(object sender, RoutedEventArgs e) => TimelineFrame.Value++;
     private void ResetTimeline(object sender, RoutedEventArgs e) => TimelineFrame.Value = 0;
     private void TimelineFrameChanged(object sender, RoutedPropertyChangedEventArgs<double> e)
     {
+        if (!advancingPlayback && playbackClock.IsRunning) StopTimelinePlayback();
         if (!updatingFrameRange) ApplyTimelineFrame();
     }
 
@@ -362,6 +395,7 @@ public partial class UldBrowser : UserControl
     private void Render()
     {
         if (PreviewCanvas == null) return;
+        StopTimelinePlayback();
         PreviewCanvas.Children.Clear();
         PreviewCanvas.Width = PreviewCanvas.Height = 0;
         layoutVisuals.Clear();

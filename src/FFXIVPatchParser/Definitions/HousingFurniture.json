@@ -1,0 +1,8 @@
+{
+  "sheet": "HousingFurniture",
+  "schemaHash": "1556D65D2DBB67DB5AC817F9A76E0527DBFA8B2A15C91979F4DF2788FF94A61A",
+  "definitions": [
+    { "index": 0, "name": "ModelKey" },
+    { "index": 7, "name": "Item", "converter": { "type": "link", "target": "Item" } }
+  ]
+}

@@ -56,6 +56,10 @@ public sealed partial class LocalGameSource
 
     private static IEnumerable<string> ExtractModelMaterialPaths(byte[] runtime, string? modelPath)
     {
+        // 场景可为同名模型提供独立的 PCB 碰撞体，候选仍须由当前索引确认。
+        if (modelPath != null && (modelPath.StartsWith("bg/") || modelPath.StartsWith("bgcommon/")) &&
+            modelPath.EndsWith(".mdl", StringComparison.Ordinal) && modelPath.Contains("/bgparts/", StringComparison.Ordinal))
+            yield return modelPath[..^4].Replace("/bgparts/", "/collision/", StringComparison.Ordinal) + ".pcb";
         if (runtime.Length < 8) yield break;
         var size = BinaryPrimitives.ReadUInt32LittleEndian(runtime.AsSpan(4));
         var end = (int)Math.Min(runtime.Length, 8L + size);

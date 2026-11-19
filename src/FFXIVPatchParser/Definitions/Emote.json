@@ -1,0 +1,67 @@
+{
+  "sheet": "Emote",
+  "schemaHash": "29C54F4E17213D4ECC91131ECDBB31D0234AC6023B5A6C4B12C5E18F27FC71AB",
+  "defaultColumn": "Name",
+  "definitions": [
+    {
+      "index": 0,
+      "name": "Name"
+    },
+    {
+      "index": 1,
+      "name": "LoopTimeline",
+      "converter": {
+        "type": "link",
+        "target": "ActionTimeline"
+      }
+    },
+    {
+      "index": 2,
+      "name": "IntroTimeline",
+      "converter": {
+        "type": "link",
+        "target": "ActionTimeline"
+      }
+    },
+    {
+      "index": 3,
+      "name": "GroundTimeline",
+      "converter": {
+        "type": "link",
+        "target": "ActionTimeline"
+      }
+    },
+    {
+      "index": 4,
+      "name": "ChairTimeline",
+      "converter": {
+        "type": "link",
+        "target": "ActionTimeline"
+      }
+    },
+    {
+      "index": 5,
+      "name": "UpperBodyTimeline",
+      "converter": {
+        "type": "link",
+        "target": "ActionTimeline"
+      }
+    },
+    {
+      "index": 6,
+      "name": "FacialTimeline",
+      "converter": {
+        "type": "link",
+        "target": "ActionTimeline"
+      }
+    },
+    {
+      "index": 7,
+      "name": "ActionTimeline[6]",
+      "converter": {
+        "type": "link",
+        "target": "ActionTimeline"
+      }
+    }
+  ]
+}

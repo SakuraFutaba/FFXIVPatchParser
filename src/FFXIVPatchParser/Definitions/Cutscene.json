@@ -1,0 +1,11 @@
+{
+  "sheet": "Cutscene",
+  "schemaHash": "92468B05E3D0C04D9F4F76D26A460B20117F4F5E07D5818107864DEAF71ED1CA",
+  "defaultColumn": "Path",
+  "definitions": [
+    {
+      "index": 0,
+      "name": "Path"
+    }
+  ]
+}
